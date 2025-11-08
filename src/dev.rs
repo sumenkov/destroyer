@@ -104,7 +104,6 @@ pub fn full_sync(file: &File) -> io::Result<()> {
 pub fn get_device_size_bytes(dev_path: &str) -> std::io::Result<u64> {
     use std::fs::File;
     use std::io;
-    use std::os::fd::AsRawFd;
     use std::path::Path;
     use libc::{ioctl, c_ulong};
 
@@ -140,7 +139,6 @@ pub fn get_device_size_bytes(dev_path: &str) -> std::io::Result<u64> {
 
 #[cfg(target_os = "macos")]
 pub fn get_device_size_bytes(dev_path: &str) -> io::Result<u64> {
-    use std::os::fd::AsRawFd;
     use std::fs::File;
     use libc::{c_ulong, ioctl};
 
