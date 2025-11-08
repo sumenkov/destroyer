@@ -1,0 +1,9 @@
+[package]
+name = "destroyer"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Secure multi-pass disk wiper (Linux/macOS). USE WITH EXTREME CAUTION."
+
+[dependencies]
+libc = "0.2"
