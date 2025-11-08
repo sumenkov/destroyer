@@ -15,6 +15,7 @@
 - [构建](#构建)
 - [运行](#运行)
 - [模式](#模式)
+- [直接 I/O（Linux O_DIRECT）](#直接-io-linux-o_direct)
 - [示例](#示例)
 - [卸载 / 释放设备](#卸载--释放设备)
 - [调优与性能](#调优与性能)
@@ -78,6 +79,17 @@ sudo target/release/destroyer <设备> [遍数] [--mode fast|durable] [--buf BYT
 - `durable` —— 更高可靠性：
   - **Linux**：以 `O_SYNC` 打开（每次 `write()` 等待数据稳定落盘）。
   - **macOS**：关闭缓存（`F_NOCACHE`）并在遍历结束时用 `F_FULLFSYNC` 进行强制刷新。
+
+## 直接 I/O（Linux O_DIRECT）
+`--mode direct` 使用 Linux **O_DIRECT** 绕过页面缓存，避免大规模顺序写入污染系统缓存。
+
+约束：
+- **缓冲区地址**与**长度**需按扇区对齐（通常 4096B）。
+- 写入**偏移**也必须按扇区对齐。
+- 若存在不对齐的**尾部**，程序会使用第二个非 O_DIRECT 句柄补写，保证整盘都被覆盖。
+- 在 **macOS** 上，`--mode direct` **不可用**，会给出明确报错。
+
+提示：除非明确需要，通常无需指定 `--buf`；工具会自动选择按扇区对齐且约 **64 KiB** 的缓冲区。
 
 ## 自动选择缓冲区
 在 Linux 上读取 `/sys/class/block/<dev>/queue/{logical_block_size,physical_block_size}`；

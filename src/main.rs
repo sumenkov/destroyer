@@ -41,6 +41,8 @@ fn main() {
         }
     };
     let buf_size = choose_buffer_size(bs, cfg.buf_size);
+    let sector = bs.sector() as usize;
+    let use_direct = matches!(cfg.mode, SyncMode::Direct);
 
     println!(
         "Размер устройства: {} байт ({:.2} GB)",
@@ -52,7 +54,7 @@ fn main() {
         "Выполняется {} проходов очистки (последний — нулями)...",
         cfg.passes
     );
-    println!("Режим: {:?}", match cfg.mode { SyncMode::Fast => "fast", SyncMode::Durable => "durable" });
+    println!("Режим: {:?}", match cfg.mode { SyncMode::Fast => "fast", SyncMode::Durable => "durable", SyncMode::Direct => "direct"});
     println!(
         "Блоки: logical = {} B, physical = {} B; выбран буфер = {} B",
         bs.logical,
@@ -82,7 +84,7 @@ fn main() {
             }
         };
 
-        if let Err(e) = pass_random(&mut f, buf_size, device_size, matches!(cfg.mode, SyncMode::Durable)) {
+        if let Err(e) = pass_random(&mut f, buf_size, device_size, matches!(cfg.mode, SyncMode::Durable), use_direct, sector, &cfg.device_path) {
             eprintln!("Ошибка записи случайных данных: {e}");
             std::process::exit(1);
         }
@@ -106,7 +108,7 @@ fn main() {
         }
     };
 
-    if let Err(e) = pass_zeros(&mut f, buf_size, device_size, matches!(cfg.mode, SyncMode::Durable)) {
+    if let Err(e) = pass_zeros(&mut f, buf_size, device_size, matches!(cfg.mode, SyncMode::Durable), use_direct, sector, &cfg.device_path) {
         eprintln!("Ошибка записи нулей: {e}");
         std::process::exit(1);
     }

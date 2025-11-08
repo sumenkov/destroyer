@@ -4,24 +4,29 @@ use std::os::fd::{AsRawFd, FromRawFd};
 use std::ffi::CString;
 
 /// Режим синхронизации.
+#[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub enum SyncMode {
     /// Быстро: минимальные барьеры.
     Fast,
     /// Надёжно: O_SYNC (Linux); на macOS используем F_NOCACHE + F_FULLFSYNC при вызове full_sync().
     Durable,
+    /// Прямой I/O: Linux O_DIRECT (требует выровненных буферов/длин/смещений).
+    Direct,
 }
 
 /// Открыть устройство на запись с нужной политикой.
 pub fn open_device_writable(dev_path: &str, mode: SyncMode) -> io::Result<File> {
     #[cfg(target_os = "linux")]
     {
-        use libc::{open, O_WRONLY, O_SYNC};
+        use libc::{open, O_WRONLY, O_SYNC, O_DIRECT};
         let c = CString::new(dev_path).unwrap();
         let mut flags = O_WRONLY;
-        if let SyncMode::Durable = mode {
-            flags |= O_SYNC;
-        }
+        match mode {
+            SyncMode::Fast => {}
+            SyncMode::Durable => { flags |= O_SYNC; }
+            SyncMode::Direct => { flags |= O_DIRECT; }
+        };
         let fd = unsafe { open(c.as_ptr(), flags, 0) };
         if fd < 0 {
             return Err(io::Error::last_os_error());
@@ -43,6 +48,11 @@ pub fn open_device_writable(dev_path: &str, mode: SyncMode) -> io::Result<File> 
 
         // Не засоряем page cache (актуально для «сырых» устройств).
         unsafe { let _ = fcntl(f.as_raw_fd(), F_NOCACHE, 1); }
+
+        // if let SyncMode::Direct = mode {
+        //     // На macOS прямой O_DIRECT-эквивалент для блочных устройств отсутствует.
+        //     return Err(io::Error::new(io::ErrorKind::Other, "Режим 'direct' доступен только на Linux (O_DIRECT)"));
+        // }
 
         f.seek(SeekFrom::Start(0))?;
         let _ = mode; // управление барьерами делаем через full_sync()/safe_sync()
@@ -97,6 +107,27 @@ pub fn full_sync(file: &File) -> io::Result<()> {
     {
         Err(io::Error::new(io::ErrorKind::Other, "Поддерживаются только Linux и macOS"))
     }
+}
+
+/// Выровненный буфер под O_DIRECT: адрес и длина кратны `align` (обычно сектору: 4096 и т.п.)
+#[cfg(target_os = "linux")]
+pub fn alloc_aligned(len: usize, align: usize) -> io::Result<Box<[u8]>> {
+    use libc::posix_memalign;
+    assert!(align.is_power_of_two(), "align должен быть степенью двойки");
+    let mut ptr: *mut libc::c_void = std::ptr::null_mut();
+    let rc = unsafe { posix_memalign(&mut ptr, align, len) };
+    if rc != 0 { return Err(io::Error::from_raw_os_error(rc)); }
+    // Инициализируем нулями, выше по стеку можно заполнить случайными данными.
+    unsafe { std::ptr::write_bytes(ptr, 0, len); }
+    let slice = unsafe { std::slice::from_raw_parts_mut(ptr as *mut u8, len) };
+    Ok(unsafe { Box::from_raw(slice) })
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn alloc_aligned(len: usize, _align: usize) -> io::Result<Box<[u8]>> {
+    // На не-Linux O_DIRECT не используем — вернём обычный буфер.
+    let v = vec![0u8; len].into_boxed_slice();
+    Ok(v)
 }
 
 /// Размеры блока (логический и физический) в байтах.

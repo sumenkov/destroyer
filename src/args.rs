@@ -16,7 +16,7 @@ impl Config {
     ///
     /// Форматы:
     ///   destroyer <device> [passes]
-    ///   destroyer <device> [passes] --mode fast|durable [--buf BYTES]
+    ///   destroyer <device> [passes] --mode fast|durable|direct [--buf BYTES]
     pub fn parse(mut args: Vec<String>) -> Self {
         if args.len() < 2 {
             eprintln!("{}", Self::usage(&args.get(0).map(String::as_str).unwrap_or("destroyer")));
@@ -38,15 +38,25 @@ impl Config {
                 }
                 "--mode" => {
                     if i + 1 >= args.len() {
-                        eprintln!("--mode требует аргумент: fast|durable");
+                        eprintln!("--mode требует аргумент: fast|durable|direct");
                         exit(1);
                     }
                     let val = args[i + 1].as_str();
                     mode = match val {
                         "fast" => SyncMode::Fast,
                         "durable" => SyncMode::Durable,
+                        "direct" => {
+                            // На Linux разрешаем, на macOS выдадим понятную ошибку в main при попытке открыть.
+                            #[cfg(target_os = "linux")]
+                            { SyncMode::Direct }
+                            #[cfg(not(target_os = "linux"))]
+                            {
+                                eprintln!("Режим 'direct' поддерживается только на Linux (O_DIRECT).");
+                                exit(1);
+                            }
+                        }
                         _ => {
-                            eprintln!("Неизвестное значение --mode: {val}. Ожидается fast|durable");
+                            eprintln!("Неизвестное значение --mode: {val}. Ожидается fast|durable|direct");
                             exit(1);
                         }
                     };
@@ -116,17 +126,18 @@ impl Config {
     pub fn usage(prog: &str) -> String {
         format!(
 "Использование:
-  {prog} <устройство> [проходы] [--mode fast|durable] [--buf BYTES]
+  {prog} <устройство> [проходы] [--mode fast|durable|direct] [--buf BYTES]
 
 Примеры:
   sudo {prog} /dev/sdX 8
   sudo {prog} /dev/sdX 8 --mode durable --buf 65536
+  sudo {prog} /dev/sdX 8 --mode direct
   sudo {prog} /dev/diskN 3 --mode fast
 
 Пояснения:
   <устройство>     Путь к блочному девайсу (Linux: /dev/sdX|nvme0n1; macOS: /dev/diskN)
   [проходы]        Количество проходов (последний — нулями). По умолчанию 8
-  --mode           fast (быстро) | durable (максимум надёжности)
+  --mode           fast (быстро) | durable (максимум надёжности) | direct (Linux, O_DIRECT — без page cache)
   --buf BYTES      Размер буфера. Если не указан — выбирается автоматически
                    по размеру блока устройства (кратно сектору, целимся ~64 KiB)"
         )

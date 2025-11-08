@@ -1,6 +1,6 @@
-use crate::dev::{safe_sync, full_sync};
+use crate::dev::{safe_sync, full_sync, open_device_writable, SyncMode, alloc_aligned};
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Write, Seek, SeekFrom};
 
 /// Заполнить буфер криптографически стойкими случайными байтами из `/dev/urandom`.
 pub fn fill_secure_random(buf: &mut [u8]) -> io::Result<()> {
@@ -26,13 +26,17 @@ fn print_progress(done: u64, total: u64) {
 }
 
 /// Один проход перезаписи случайными данными (новая генерация буфера на каждый проход).
-pub fn pass_random(file: &mut File, buf_size: usize, device_size: u64, durable: bool) -> io::Result<()> {
-    let mut buf = vec![0u8; buf_size];
+/// Один проход перезаписи случайными данными (новая генерация буфера на каждый проход).
+/// Если дескриптор открыт в режиме O_DIRECT (Linux), буфер должен быть выровнен,
+/// длина записи кратна `sector`, а смещение — кратно `sector`.
+pub fn pass_random(file: &mut File, buf_size: usize, device_size: u64, durable: bool, use_direct: bool, sector: usize, dev_path: &str) -> io::Result<()> {
+    let mut buf = if use_direct { alloc_aligned(buf_size, sector)? } else { vec![0u8; buf_size].into_boxed_slice() };
     fill_secure_random(&mut buf)?;
 
     let mut written_total: u64 = 0;
-    while written_total < device_size {
-        let remaining = device_size - written_total;
+    let full_limit = if use_direct { device_size - (device_size % sector as u64) } else { device_size };
+    while written_total < full_limit {
+        let remaining = full_limit - written_total;
         let to_write = remaining.min(buf.len() as u64) as usize;
 
         file.write_all(&buf[..to_write])?;
@@ -41,6 +45,21 @@ pub fn pass_random(file: &mut File, buf_size: usize, device_size: u64, durable: 
         print_progress(written_total, device_size);
     }
     println!();
+
+    // Если остался «хвост» не кратный сектору — допишем обычным дескриптором.
+    if use_direct {
+        let tail = (device_size - written_total) as usize;
+        if tail > 0 {
+            let mut tail_fd = open_device_writable(dev_path, SyncMode::Fast)?;
+            tail_fd.seek(SeekFrom::Start(written_total))?;
+            // использовать невыравненный обычный буфер
+            let mut tbuf = vec![0u8; tail.min(buf.len())];
+            // для случайных данных — важно не повторять шаблон из aligned-буфера
+            fill_secure_random(&mut tbuf)?;
+            tail_fd.write_all(&tbuf[..tail])?;
+            if durable { full_sync(&tail_fd)?; } else { safe_sync(&tail_fd)?; }
+        }
+    }
 
     // В процессе итераций мы не форсируем full barrier — чтобы не убить скорость.
     // В конце прохода:
@@ -53,12 +72,13 @@ pub fn pass_random(file: &mut File, buf_size: usize, device_size: u64, durable: 
 }
 
 /// Финальный проход нулями.
-pub fn pass_zeros(file: &mut File, buf_size: usize, device_size: u64, durable: bool) -> io::Result<()> {
-    let buf = vec![0u8; buf_size];
+pub fn pass_zeros(file: &mut File, buf_size: usize, device_size: u64, durable: bool, use_direct: bool, sector: usize, dev_path: &str) -> io::Result<()> {
+    let buf = if use_direct { alloc_aligned(buf_size, sector)? } else { vec![0u8; buf_size].into_boxed_slice() };
 
     let mut written_total: u64 = 0;
-    while written_total < device_size {
-        let remaining = device_size - written_total;
+    let full_limit = if use_direct { device_size - (device_size % sector as u64) } else { device_size };
+    while written_total < full_limit {
+        let remaining = full_limit - written_total;
         let to_write = remaining.min(buf.len() as u64) as usize;
 
         file.write_all(&buf[..to_write])?;
@@ -67,6 +87,17 @@ pub fn pass_zeros(file: &mut File, buf_size: usize, device_size: u64, durable: b
         print_progress(written_total, device_size);
     }
     println!();
+
+    if use_direct {
+        let tail = (device_size - written_total) as usize;
+        if tail > 0 {
+            let mut tail_fd = open_device_writable(dev_path, SyncMode::Fast)?;
+            tail_fd.seek(SeekFrom::Start(written_total))?;
+            let tbuf = vec![0u8; tail];
+            tail_fd.write_all(&tbuf)?;
+            if durable { full_sync(&tail_fd)?; } else { safe_sync(&tail_fd)?; }
+        }
+    }
 
     if durable {
         full_sync(file)?;

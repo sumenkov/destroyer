@@ -15,6 +15,7 @@
 - [Build](#build)
 - [Usage](#usage)
 - [Modes](#modes)
+- [Direct I/O (Linux O_DIRECT)](#direct-io-linux-o_direct)
 - [Examples](#examples)
 - [Un-mounting / Freeing a Device](#un-mounting--freeing-a-device)
 - [Tuning & Performance](#tuning--performance)
@@ -78,6 +79,17 @@ sudo target/release/destroyer <device> [passes] [--mode fast|durable] [--buf BYT
 - `durable` — higher durability:
   - **Linux**: open device with `O_SYNC` (each `write()` waits until data is stable on the device).
   - **macOS**: disable caching (`F_NOCACHE`) and perform a hard flush with `F_FULLFSYNC` at the end of each pass.
+
+## Direct I/O (Linux O_DIRECT)
+`--mode direct` uses Linux **O_DIRECT** to bypass the page cache. This avoids polluting the system cache during large sequential writes.
+
+Constraints:
+- Buffer **address** and **length** must be aligned to the device sector (commonly 4096B).
+- Write **offsets** must be sector-aligned as well.
+- The tool handles alignment and will write any non-aligned **tail** using a secondary non-O_DIRECT handle, so the whole device is still overwritten.
+- On **macOS**, `--mode direct` is **not available** and will error with a clear message.
+
+Tip: Use `--buf` only if you need a specific size. Otherwise the tool auto-selects a multiple of the sector (~64 KiB target).
 
 ## Auto buffer selection
 On Linux we read `/sys/class/block/<dev>/queue/{logical_block_size,physical_block_size}`.
