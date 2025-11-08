@@ -5,7 +5,9 @@ use std::process::exit;
 pub struct Config {
     pub device_path: String,
     pub passes: usize,
-    pub buf_size: usize,
+    /// Пользовательский размер буфера, если задан через --buf.
+    /// Если None — будет выбран автоматически по размеру блока устройства.
+    pub buf_size: Option<usize>,
     pub mode: SyncMode,
 }
 
@@ -24,7 +26,7 @@ impl Config {
         let prog = args.remove(0);
         let mut device_path: Option<String> = None;
         let mut passes: Option<usize> = None;
-        let mut buf_size: usize = 4096;
+        let mut buf_size: Option<usize> = None;
         let mut mode = SyncMode::Fast;
 
         let mut i = 0usize;
@@ -55,16 +57,17 @@ impl Config {
                         eprintln!("--buf требует число байт");
                         exit(1);
                     }
-                    buf_size = args[i + 1]
+                    let parsed = args[i + 1]
                         .parse::<usize>()
                         .unwrap_or_else(|_| {
                             eprintln!("Некорректное значение для --buf");
                             exit(1);
                         });
-                    if buf_size == 0 {
+                    if parsed == 0 {
                         eprintln!("--buf должен быть > 0");
                         exit(1);
                     }
+                    buf_size = Some(parsed);
                     i += 2;
                 }
                 s if s.starts_with("--") => {
@@ -124,7 +127,8 @@ impl Config {
   <устройство>     Путь к блочному девайсу (Linux: /dev/sdX|nvme0n1; macOS: /dev/diskN)
   [проходы]        Количество проходов (последний — нулями). По умолчанию 8
   --mode           fast (быстро) | durable (максимум надёжности)
-  --buf BYTES      Размер буфера, по умолчанию 4096"
+  --buf BYTES      Размер буфера. Если не указан — выбирается автоматически
+                   по размеру блока устройства (кратно сектору, целимся ~64 KiB)"
         )
     }
 }

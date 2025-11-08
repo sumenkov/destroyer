@@ -99,6 +99,89 @@ pub fn full_sync(file: &File) -> io::Result<()> {
     }
 }
 
+/// Размеры блока (логический и физический) в байтах.
+#[derive(Debug, Clone, Copy)]
+pub struct BlockSizes {
+    pub logical: u32,
+    pub physical: u32,
+}
+
+impl BlockSizes {
+    /// Наиболее строгий размер сектора — максимум из logical и physical.
+    pub fn sector(&self) -> u32 {
+        self.logical.max(self.physical)
+    }
+}
+
+/// Определить размеры блоков устройства.
+#[cfg(target_os = "linux")]
+pub fn get_block_sizes(dev_path: &str) -> io::Result<BlockSizes> {
+    use std::io;
+    use std::path::Path;
+
+    let dev_name = Path::new(dev_path)
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "bad device path"))?
+        .to_string_lossy()
+        .into_owned();
+
+    let l_path = format!("/sys/class/block/{}/queue/logical_block_size", dev_name);
+    let p_path = format!("/sys/class/block/{}/queue/physical_block_size", dev_name);
+
+    let logical: u32 = std::fs::read_to_string(&l_path)
+        .ok()
+        .and_then(|s| s.trim().parse::<u32>().ok())
+        .unwrap_or(512);
+    let physical: u32 = std::fs::read_to_string(&p_path)
+        .ok()
+        .and_then(|s| s.trim().parse::<u32>().ok())
+        .unwrap_or(logical.max(512));
+
+    Ok(BlockSizes { logical, physical })
+}
+
+#[cfg(target_os = "macos")]
+pub fn get_block_sizes(dev_path: &str) -> io::Result<BlockSizes> {
+    use std::fs::File;
+    use std::os::fd::AsRawFd;
+    use libc::{c_ulong, ioctl};
+
+    const DKIOCGETBLOCKSIZE: c_ulong  = 0x4004_6418; // _IOR('d', 24, u32)
+
+    let f = File::open(dev_path)?;
+    let fd = f.as_raw_fd();
+    let mut block_size: u32 = 0;
+    let rc = unsafe { ioctl(fd, DKIOCGETBLOCKSIZE, &mut block_size) };
+    if rc < 0 || block_size == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(BlockSizes { logical: block_size, physical: block_size })
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+pub fn get_block_sizes(_dev_path: &str) -> io::Result<BlockSizes> {
+    Err(io::Error::new(io::ErrorKind::Other, "Поддерживаются только Linux и macOS"))
+}
+
+/// Подбор размера буфера с учётом блоков.
+/// - кратность sector = max(logical, physical)
+/// - если `requested` = None → целимся в 64 KiB; ограничиваем [16 KiB .. 1 MiB]
+/// - если `requested` задан → нормализуем (кратно сектору) и ограничиваем диапазон
+pub fn choose_buffer_size(sizes: BlockSizes, requested: Option<usize>) -> usize {
+    let sector = sizes.sector() as usize;
+    let mut target = requested.unwrap_or(64 * 1024);
+
+    let min_b = 16 * 1024;
+    let max_b = 1024 * 1024;
+    if target < min_b { target = min_b; }
+    if target > max_b { target = max_b; }
+
+    let rem = target % sector;
+    if rem != 0 { target += sector - rem; }
+    target
+}
+
+
 /// Получить размер блочного устройства в байтах (ioctl).
 #[cfg(target_os = "linux")]
 pub fn get_device_size_bytes(dev_path: &str) -> std::io::Result<u64> {

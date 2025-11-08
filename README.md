@@ -70,13 +70,20 @@ sudo target/release/destroyer <device> [passes] [--mode fast|durable] [--buf BYT
 - `<device>` — path to the block device (Linux: `/dev/sdX`, `/dev/nvme0n1`; macOS: `/dev/diskN`).
 - `[passes]` — number of passes, default **8** (the last pass writes zeros).
 - `--mode` — `fast` (default) or `durable` (see below).
-- `--buf BYTES` — write buffer size, default **4096**. Larger values (e.g. `65536`) may be faster on some media.
+- `--buf BYTES` — write buffer size. If omitted, buffer size is **chosen automatically**
+  based on the device block size (aligned to sector; ~64 KiB target within 16 KiB..1 MiB).
 
 ## Modes
 - `fast` — speed oriented.
 - `durable` — higher durability:
   - **Linux**: open device with `O_SYNC` (each `write()` waits until data is stable on the device).
   - **macOS**: disable caching (`F_NOCACHE`) and perform a hard flush with `F_FULLFSYNC` at the end of each pass.
+
+## Auto buffer selection
+On Linux we read `/sys/class/block/<dev>/queue/{logical_block_size,physical_block_size}`.
+On macOS we query `DKIOCGETBLOCKSIZE`. The buffer is then selected to be a multiple of
+`max(logical, physical)` with a target around **64 KiB** (clamped to **16 KiB..1 MiB**).
+If you pass `--buf`, your value is normalized to sector alignment and clamped to the same range.
 
 ## Examples
 ```bash

@@ -70,13 +70,20 @@ sudo target/release/destroyer <设备> [遍数] [--mode fast|durable] [--buf BYT
 - `<设备>` —— 块设备路径（Linux：`/dev/sdX`、`/dev/nvme0n1`；macOS：`/dev/diskN`）。
 - `[遍数]` —— 遍历次数，默认 **8**（最后一遍写零）。
 - `--mode` —— `fast`（默认）或 `durable`（见下）。
-- `--buf BYTES` —— 写入缓冲区大小，默认 **4096**。适当增大（如 `65536`）在部分介质上可提升吞吐。
+- `--buf BYTES` —— 写入缓冲区大小。未指定时将**自动选择**：
+  基于设备块大小对齐到扇区，目标约 **64 KiB**（并限制在 **16 KiB..1 MiB** 范围）。
 
 ## 模式
 - `fast` —— 速度优先。
 - `durable` —— 更高可靠性：
   - **Linux**：以 `O_SYNC` 打开（每次 `write()` 等待数据稳定落盘）。
   - **macOS**：关闭缓存（`F_NOCACHE`）并在遍历结束时用 `F_FULLFSYNC` 进行强制刷新。
+
+## 自动选择缓冲区
+在 Linux 上读取 `/sys/class/block/<dev>/queue/{logical_block_size,physical_block_size}`；
+在 macOS 上使用 `DKIOCGETBLOCKSIZE`。随后缓冲区会选择为 `max(logical, physical)` 的整数倍，
+目标约 **64 KiB**（限制为 **16 KiB..1 MiB**）。
+若传入 `--buf`，该值会被规范化为对齐到扇区并限制在同一范围。
 
 ## 示例
 ```bash

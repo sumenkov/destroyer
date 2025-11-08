@@ -3,7 +3,7 @@ mod dev;
 mod wipe;
 
 use args::Config;
-use dev::{get_device_size_bytes, open_device_writable, SyncMode};
+use dev::{get_device_size_bytes, get_block_sizes, choose_buffer_size, open_device_writable, SyncMode};
 use wipe::{pass_random, pass_zeros};
 use std::thread::sleep;
 use std::time::Duration;
@@ -32,6 +32,16 @@ fn main() {
         }
     };
 
+    // Размеры блоков и выбор буфера
+    let bs = match get_block_sizes(&cfg.device_path) {
+        Ok(b) => b,
+        Err(_) => {
+            // Если не удалось определить — используем безопасные дефолты
+            dev::BlockSizes { logical: 512, physical: 4096 }
+        }
+    };
+    let buf_size = choose_buffer_size(bs, cfg.buf_size);
+
     println!(
         "Размер устройства: {} байт ({:.2} GB)",
         device_size,
@@ -43,7 +53,12 @@ fn main() {
         cfg.passes
     );
     println!("Режим: {:?}", match cfg.mode { SyncMode::Fast => "fast", SyncMode::Durable => "durable" });
-    println!("Буфер: {} bytes", cfg.buf_size);
+    println!(
+        "Блоки: logical = {} B, physical = {} B; выбран буфер = {} B",
+        bs.logical,
+        bs.physical,
+        buf_size
+    );
     println!("ВНИМАНИЕ: все данные на устройстве будут уничтожены!");
     println!("Для отмены нажмите Ctrl+C в течение 5 секунд...");
     sleep(Duration::from_secs(5));
@@ -67,7 +82,7 @@ fn main() {
             }
         };
 
-        if let Err(e) = pass_random(&mut f, cfg.buf_size, device_size, matches!(cfg.mode, SyncMode::Durable)) {
+        if let Err(e) = pass_random(&mut f, buf_size, device_size, matches!(cfg.mode, SyncMode::Durable)) {
             eprintln!("Ошибка записи случайных данных: {e}");
             std::process::exit(1);
         }
@@ -91,7 +106,7 @@ fn main() {
         }
     };
 
-    if let Err(e) = pass_zeros(&mut f, cfg.buf_size, device_size, matches!(cfg.mode, SyncMode::Durable)) {
+    if let Err(e) = pass_zeros(&mut f, buf_size, device_size, matches!(cfg.mode, SyncMode::Durable)) {
         eprintln!("Ошибка записи нулей: {e}");
         std::process::exit(1);
     }
