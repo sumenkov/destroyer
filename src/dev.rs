@@ -101,18 +101,41 @@ pub fn full_sync(file: &File) -> io::Result<()> {
 
 /// Получить размер блочного устройства в байтах (ioctl).
 #[cfg(target_os = "linux")]
-pub fn get_device_size_bytes(dev_path: &str) -> io::Result<u64> {
-    use std::os::fd::AsRawFd;
+pub fn get_device_size_bytes(dev_path: &str) -> std::io::Result<u64> {
     use std::fs::File;
-    use libc::{ioctl, BLKGETSIZE64};
-    let f = File::open(dev_path)?;
-    let fd = f.as_raw_fd();
-    let mut size: u64 = 0;
-    let ret = unsafe { ioctl(fd, BLKGETSIZE64, &mut size) };
-    if ret < 0 {
-        return Err(io::Error::last_os_error());
+    use std::io;
+    use std::os::fd::AsRawFd;
+    use std::path::Path;
+    use libc::{ioctl, c_ulong};
+
+    // BLKGETSIZE64 = _IOR(0x12, 114, size_t) -> 0x80081272 на Linux
+    const BLKGETSIZE64: c_ulong = 0x8008_1272;
+
+    // 1) Пытаемся через ioctl
+    if let Ok(f) = File::open(dev_path) {
+        let fd = f.as_raw_fd();
+        let mut size: u64 = 0;
+        let rc = unsafe { ioctl(fd, BLKGETSIZE64, &mut size) };
+        if rc == 0 && size > 0 {
+            return Ok(size);
+        }
+        // если ioctl вернул ошибку — пойдём во fallback
     }
-    Ok(size)
+
+    // 2) Fallback: читаем sysfs: /sys/class/block/<dev>/size (в 512-байтных секторах)
+    let dev_name = Path::new(dev_path)
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "bad device path"))?
+        .to_string_lossy()
+        .into_owned();
+
+    let size_path = format!("/sys/class/block/{}/size", dev_name);
+    let sectors: u64 = std::fs::read_to_string(&size_path)?
+        .trim()
+        .parse()
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "bad size in sysfs"))?;
+
+    Ok(sectors.saturating_mul(512))
 }
 
 #[cfg(target_os = "macos")]
