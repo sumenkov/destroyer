@@ -92,7 +92,13 @@ pub fn full_sync(file: &File) -> io::Result<()> {
         let rc: c_int = unsafe { fcntl(file.as_raw_fd(), F_FULLFSYNC) };
         if rc == -1 {
             // fallback + мягкая обработка неподдерживаемых ошибок
-            safe_sync(file);
+            match file.sync_all() {
+                Ok(()) => Ok(()),
+                Err(e) => match e.raw_os_error() {
+                    Some(code) if code == libc::ENOTTY || code == libc::ENOTSUP || code == libc::EINVAL => Ok(()),
+                    _ => Err(e),
+                },
+            }
         } else {
             Ok(())
         }
