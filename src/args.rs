@@ -23,13 +23,13 @@ impl Config {
             exit(1);
         }
 
-        let prog = args.remove(0);
+        let prog: String = args.remove(0);
         let mut device_path: Option<String> = None;
         let mut passes: Option<usize> = None;
         let mut buf_size: Option<usize> = None;
-        let mut mode = SyncMode::Fast;
+        let mut mode: SyncMode = SyncMode::Fast;
 
-        let mut i = 0usize;
+        let mut i: usize = 0usize;
         while i < args.len() {
             match args[i].as_str() {
                 "--help" | "-h" => {
@@ -41,7 +41,7 @@ impl Config {
                         eprintln!("--mode требует аргумент: fast|durable|direct");
                         exit(1);
                     }
-                    let val = args[i + 1].as_str();
+                    let val: &str = args[i + 1].as_str();
                     mode = match val {
                         "fast" => SyncMode::Fast,
                         "durable" => SyncMode::Durable,
@@ -67,7 +67,7 @@ impl Config {
                         eprintln!("--buf требует число байт");
                         exit(1);
                     }
-                    let parsed = args[i + 1]
+                    let parsed: usize = args[i + 1]
                         .parse::<usize>()
                         .unwrap_or_else(|_| {
                             eprintln!("Некорректное значение для --buf");
@@ -90,7 +90,7 @@ impl Config {
                         device_path = Some(other.to_string());
                         i += 1;
                     } else if passes.is_none() {
-                        let p = other.parse::<usize>().unwrap_or_else(|_| {
+                        let p: usize = other.parse::<usize>().unwrap_or_else(|_| {
                             eprintln!("Число проходов должно быть положительным целым");
                             exit(1);
                         });
@@ -108,12 +108,12 @@ impl Config {
             }
         }
 
-        let device_path = device_path.unwrap_or_else(|| {
+        let device_path: String = device_path.unwrap_or_else(|| {
             eprintln!("{}", Self::usage(&prog));
             exit(1);
         });
 
-        let passes = passes.unwrap_or(8);
+        let passes: usize = passes.unwrap_or(8);
 
         Self {
             device_path,

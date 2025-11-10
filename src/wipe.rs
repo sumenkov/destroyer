@@ -4,10 +4,10 @@ use std::io::{self, Read, Write, Seek, SeekFrom, Error};
 
 /// Заполнить буфер криптографически стойкими случайными байтами из `/dev/urandom`.
 pub fn fill_secure_random(buf: &mut [u8]) -> io::Result<()> {
-    let mut urnd = std::fs::File::open("/dev/urandom")?;
-    let mut filled = 0;
+    let mut urnd: File = std::fs::File::open("/dev/urandom")?;
+    let mut filled: usize = 0;
     while filled < buf.len() {
-        let n = urnd.read(&mut buf[filled..])?;
+        let n: usize = urnd.read(&mut buf[filled..])?;
         if n == 0 {
             return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "urandom EOF"));
         }
@@ -30,18 +30,18 @@ fn print_progress(done: u64, total: u64) {
 /// Если дескриптор открыт в режиме O_DIRECT (Linux), буфер должен быть выровнен,
 /// длина записи кратна `sector`, а смещение — кратно `sector`.
 pub fn pass_random(file: &mut File, buf_size: usize, device_size: u64, durable: bool, use_direct: bool, sector: usize, dev_path: &str) -> io::Result<()> {
-    let mut buf = if use_direct { alloc_aligned(buf_size, sector)? } else { vec![0u8; buf_size].into_boxed_slice() };
+    let mut buf: Box<[u8]> = if use_direct { alloc_aligned(buf_size, sector)? } else { vec![0u8; buf_size].into_boxed_slice() };
     fill_secure_random(&mut buf)?;
 
     let written_total: u64 = 0;
-    let full_limit = if use_direct { device_size - (device_size % sector as u64) } else { device_size };
+    let full_limit: u64 = if use_direct { device_size - (device_size % sector as u64) } else { device_size };
     
     init_written_total(file, device_size, &buf, written_total, full_limit)?;
     println!();
 
     // Если остался «хвост» не кратный сектору — допишем обычным дескриптором.
     if use_direct {
-        let tail = (device_size - written_total) as usize;
+        let tail: usize = (device_size - written_total) as usize;
         if tail > 0 {
             let mut tail_fd = open_device_writable(dev_path, SyncMode::Fast)?;
             tail_fd.seek(SeekFrom::Start(written_total))?;
@@ -66,20 +66,20 @@ pub fn pass_random(file: &mut File, buf_size: usize, device_size: u64, durable: 
 
 /// Финальный проход нулями.
 pub fn pass_zeros(file: &mut File, buf_size: usize, device_size: u64, durable: bool, use_direct: bool, sector: usize, dev_path: &str) -> io::Result<()> {
-    let buf = if use_direct { alloc_aligned(buf_size, sector)? } else { vec![0u8; buf_size].into_boxed_slice() };
+    let buf: Box<[u8]> = if use_direct { alloc_aligned(buf_size, sector)? } else { vec![0u8; buf_size].into_boxed_slice() };
 
     let written_total: u64 = 0;
-    let full_limit = if use_direct { device_size - (device_size % sector as u64) } else { device_size };
+    let full_limit: u64 = if use_direct { device_size - (device_size % sector as u64) } else { device_size };
     
     init_written_total(file, device_size, &buf, written_total, full_limit)?;
     println!();
 
     if use_direct {
-        let tail = (device_size - written_total) as usize;
+        let tail: usize = (device_size - written_total) as usize;
         if tail > 0 {
-            let mut tail_fd = open_device_writable(dev_path, SyncMode::Fast)?;
+            let mut tail_fd: File = open_device_writable(dev_path, SyncMode::Fast)?;
             tail_fd.seek(SeekFrom::Start(written_total))?;
-            let tbuf = vec![0u8; tail];
+            let tbuf: Vec<u8> = vec![0u8; tail];
             tail_fd.write_all(&tbuf)?;
             if durable { full_sync(&tail_fd)?; } else { safe_sync(&tail_fd)?; }
         }
@@ -95,8 +95,8 @@ pub fn pass_zeros(file: &mut File, buf_size: usize, device_size: u64, durable: b
 
 fn init_written_total(file: &mut File, device_size: u64, buf: &Box<[u8]>, mut written_total: u64, full_limit: u64) -> Result<(), Error> {
     while written_total < full_limit {
-        let remaining = full_limit - written_total;
-        let to_write = remaining.min(buf.len() as u64) as usize;
+        let remaining: u64 = full_limit - written_total;
+        let to_write: usize = remaining.min(buf.len() as u64) as usize;
 
         file.write_all(&buf[..to_write])?;
         written_total += to_write as u64;

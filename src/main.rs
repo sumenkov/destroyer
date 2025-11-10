@@ -8,12 +8,13 @@ use dev::{get_device_size_bytes, get_block_sizes, choose_buffer_size, open_devic
 use wipe::{pass_random, pass_zeros};
 use std::thread::sleep;
 use std::time::Duration;
+use crate::dev::BlockSizes;
 
 fn main() {
-    let cfg = Config::parse(std::env::args().collect());
+    let cfg: Config = Config::parse(std::env::args().collect());
 
     // Размер устройства
-    let device_size = match get_device_size_bytes(&cfg.device_path) {
+    let device_size: u64 = match get_device_size_bytes(&cfg.device_path) {
         Ok(s) => s,
         Err(e) => {
             if let Some(code) = e.raw_os_error() {
@@ -34,13 +35,13 @@ fn main() {
     };
 
     // Размеры блоков и выбор буфера
-    let bs = get_block_sizes(&cfg.device_path).unwrap_or_else(|_| {
+    let bs: BlockSizes = get_block_sizes(&cfg.device_path).unwrap_or_else(|_| {
         // Если не удалось определить — используем безопасные дефолты
         dev::BlockSizes { logical: 512, physical: 4096 }
     });
-    let buf_size = choose_buffer_size(bs, cfg.buf_size);
-    let sector = bs.sector() as usize;
-    let use_direct = matches!(cfg.mode, SyncMode::Direct);
+    let buf_size: usize = choose_buffer_size(bs, cfg.buf_size);
+    let sector: usize = bs.sector() as usize;
+    let use_direct: bool = matches!(cfg.mode, SyncMode::Direct);
 
     println!(
         "Размер устройства: {} байт ({:.2} GB)",
@@ -67,7 +68,7 @@ fn main() {
     for pass_idx in 0..cfg.passes.saturating_sub(1) {
         println!("\nПроход {}/{} (случайные данные)...", pass_idx + 1, cfg.passes);
 
-        let mut f = open_device(&cfg);
+        let mut f: File = open_device(&cfg);
 
         if let Err(e) = pass_random(&mut f, buf_size, device_size, matches!(cfg.mode, SyncMode::Durable), use_direct, sector, &cfg.device_path) {
             eprintln!("Ошибка записи случайных данных: {e}");
@@ -78,7 +79,7 @@ fn main() {
     // Финальный проход нулями
     println!("\nФинальный проход {}/{} (нули)...", cfg.passes, cfg.passes);
 
-    let mut f = open_device(&cfg);
+    let mut f: File = open_device(&cfg);
 
     if let Err(e) = pass_zeros(&mut f, buf_size, device_size, matches!(cfg.mode, SyncMode::Durable), use_direct, sector, &cfg.device_path) {
         eprintln!("Ошибка записи нулей: {e}");

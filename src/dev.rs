@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::{self, Seek, SeekFrom};
 use std::os::fd::{AsRawFd, FromRawFd};
 use std::ffi::CString;
+use libc::c_int;
 
 /// Режим синхронизации.
 #[allow(dead_code)]
@@ -20,18 +21,18 @@ pub fn open_device_writable(dev_path: &str, mode: SyncMode) -> io::Result<File> 
     #[cfg(target_os = "linux")]
     {
         use libc::{open, O_WRONLY, O_SYNC, O_DIRECT};
-        let c = CString::new(dev_path).unwrap();
-        let mut flags = O_WRONLY;
+        let c: CString = CString::new(dev_path).unwrap();
+        let mut flags: c_int = O_WRONLY;
         match mode {
             SyncMode::Fast => {}
             SyncMode::Durable => { flags |= O_SYNC; }
             SyncMode::Direct => { flags |= O_DIRECT; }
         };
-        let fd = unsafe { open(c.as_ptr(), flags, 0) };
+        let fd: c_int = unsafe { open(c.as_ptr(), flags, 0) };
         if fd < 0 {
             return Err(io::Error::last_os_error());
         }
-        let mut f = unsafe { File::from_raw_fd(fd) };
+        let mut f: File = unsafe { File::from_raw_fd(fd) };
         f.seek(SeekFrom::Start(0))?;
         Ok(f)
     }
@@ -39,12 +40,12 @@ pub fn open_device_writable(dev_path: &str, mode: SyncMode) -> io::Result<File> 
     #[cfg(target_os = "macos")]
     {
         use libc::{fcntl, open, F_NOCACHE, O_WRONLY};
-        let c = CString::new(dev_path).unwrap();
-        let fd = unsafe { open(c.as_ptr(), O_WRONLY, 0) };
+        let c: CString = CString::new(dev_path).unwrap();
+        let fd: c_int = unsafe { open(c.as_ptr(), O_WRONLY, 0) };
         if fd < 0 {
             return Err(io::Error::last_os_error());
         }
-        let mut f = unsafe { File::from_raw_fd(fd) };
+        let mut f: File = unsafe { File::from_raw_fd(fd) };
 
         // Не засоряем page cache (актуально для «сырых» устройств).
         unsafe { let _ = fcntl(f.as_raw_fd(), F_NOCACHE, 1); }
@@ -55,7 +56,7 @@ pub fn open_device_writable(dev_path: &str, mode: SyncMode) -> io::Result<File> 
         // }
 
         f.seek(SeekFrom::Start(0))?;
-        let _ = mode; // управление барьерами делаем через full_sync()/safe_sync()
+        let _: SyncMode = mode; // управление барьерами делаем через full_sync()/safe_sync()
         Ok(f)
     }
 
@@ -88,7 +89,7 @@ pub fn full_sync(file: &File) -> io::Result<()> {
     #[cfg(target_os = "macos")]
     {
         use libc::{fcntl, F_FULLFSYNC};
-        let rc = unsafe { fcntl(file.as_raw_fd(), F_FULLFSYNC) };
+        let rc: c_int = unsafe { fcntl(file.as_raw_fd(), F_FULLFSYNC) };
         if rc == -1 {
             // fallback + мягкая обработка неподдерживаемых ошибок
             safe_sync(file);
@@ -109,18 +110,18 @@ pub fn alloc_aligned(len: usize, align: usize) -> io::Result<Box<[u8]>> {
     use libc::posix_memalign;
     assert!(align.is_power_of_two(), "align должен быть степенью двойки");
     let mut ptr: *mut libc::c_void = std::ptr::null_mut();
-    let rc = unsafe { posix_memalign(&mut ptr, align, len) };
+    let rc: c_int = unsafe { posix_memalign(&mut ptr, align, len) };
     if rc != 0 { return Err(io::Error::from_raw_os_error(rc)); }
     // Инициализируем нулями, выше по стеку можно заполнить случайными данными.
     unsafe { std::ptr::write_bytes(ptr, 0, len); }
-    let slice = unsafe { std::slice::from_raw_parts_mut(ptr as *mut u8, len) };
+    let slice: &mut [u8] = unsafe { std::slice::from_raw_parts_mut(ptr as *mut u8, len) };
     Ok(unsafe { Box::from_raw(slice) })
 }
 
 #[cfg(not(target_os = "linux"))]
 pub fn alloc_aligned(len: usize, _align: usize) -> io::Result<Box<[u8]>> {
     // На не-Linux O_DIRECT не используем — вернём обычный буфер.
-    let v = vec![0u8; len].into_boxed_slice();
+    let v: Box<[u8]> = vec![0u8; len].into_boxed_slice();
     Ok(v)
 }
 
@@ -144,14 +145,14 @@ pub fn get_block_sizes(dev_path: &str) -> io::Result<BlockSizes> {
     use std::io;
     use std::path::Path;
 
-    let dev_name = Path::new(dev_path)
+    let dev_name: String = Path::new(dev_path)
         .file_name()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "bad device path"))?
         .to_string_lossy()
         .into_owned();
 
-    let l_path = format!("/sys/class/block/{}/queue/logical_block_size", dev_name);
-    let p_path = format!("/sys/class/block/{}/queue/physical_block_size", dev_name);
+    let l_path: String = format!("/sys/class/block/{}/queue/logical_block_size", dev_name);
+    let p_path: String = format!("/sys/class/block/{}/queue/physical_block_size", dev_name);
 
     let logical: u32 = std::fs::read_to_string(&l_path)
         .ok()
@@ -172,10 +173,10 @@ pub fn get_block_sizes(dev_path: &str) -> io::Result<BlockSizes> {
 
     const DKIOCGETBLOCKSIZE: c_ulong  = 0x4004_6418; // _IOR('d', 24, u32)
 
-    let f = File::open(dev_path)?;
+    let f: File = File::open(dev_path)?;
     let fd = f.as_raw_fd();
     let mut block_size: u32 = 0;
-    let rc = unsafe { ioctl(fd, DKIOCGETBLOCKSIZE, &mut block_size) };
+    let rc: c_int = unsafe { ioctl(fd, DKIOCGETBLOCKSIZE, &mut block_size) };
     if rc < 0 || block_size == 0 {
         return Err(io::Error::last_os_error());
     }
@@ -192,15 +193,15 @@ pub fn get_block_sizes(_dev_path: &str) -> io::Result<BlockSizes> {
 /// - если `requested` = None → целимся в 64 KiB; ограничиваем [16 KiB .. 1 MiB]
 /// - если `requested` задан → нормализуем (кратно сектору) и ограничиваем диапазон
 pub fn choose_buffer_size(sizes: BlockSizes, requested: Option<usize>) -> usize {
-    let sector = sizes.sector() as usize;
-    let mut target = requested.unwrap_or(64 * 1024);
+    let sector: usize = sizes.sector() as usize;
+    let mut target: usize = requested.unwrap_or(64 * 1024);
 
-    let min_b = 16 * 1024;
-    let max_b = 1024 * 1024;
+    let min_b: usize = 16 * 1024;
+    let max_b: usize = 1024 * 1024;
     if target < min_b { target = min_b; }
     if target > max_b { target = max_b; }
 
-    let rem = target % sector;
+    let rem: usize = target % sector;
     if rem != 0 { target += sector - rem; }
     target
 }
@@ -229,13 +230,13 @@ pub fn get_device_size_bytes(dev_path: &str) -> std::io::Result<u64> {
     }
 
     // 2) Fallback: читаем sysfs: /sys/class/block/<dev>/size (в 512-байтных секторах)
-    let dev_name = Path::new(dev_path)
+    let dev_name: String = Path::new(dev_path)
         .file_name()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "bad device path"))?
         .to_string_lossy()
         .into_owned();
 
-    let size_path = format!("/sys/class/block/{}/size", dev_name);
+    let size_path: String = format!("/sys/class/block/{}/size", dev_name);
     let sectors: u64 = std::fs::read_to_string(&size_path)?
         .trim()
         .parse()
@@ -253,17 +254,17 @@ pub fn get_device_size_bytes(dev_path: &str) -> io::Result<u64> {
     const DKIOCGETBLOCKSIZE: c_ulong  = 0x4004_6418; // _IOR('d', 24, u32)
     const DKIOCGETBLOCKCOUNT: c_ulong = 0x4008_6419; // _IOR('d', 25, u64)
 
-    let f = File::open(dev_path)?;
+    let f: File = File::open(dev_path)?;
     let fd = f.as_raw_fd();
 
     let mut block_size: u32 = 0;
     let mut block_count: u64 = 0;
 
-    let r1 = unsafe { ioctl(fd, DKIOCGETBLOCKSIZE, &mut block_size) };
+    let r1: c_int = unsafe { ioctl(fd, DKIOCGETBLOCKSIZE, &mut block_size) };
     if r1 < 0 {
         return Err(io::Error::last_os_error());
     }
-    let r2 = unsafe { ioctl(fd, DKIOCGETBLOCKCOUNT, &mut block_count) };
+    let r2: c_int = unsafe { ioctl(fd, DKIOCGETBLOCKCOUNT, &mut block_count) };
     if r2 < 0 {
         return Err(io::Error::last_os_error());
     }
