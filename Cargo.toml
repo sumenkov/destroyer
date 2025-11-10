@@ -7,3 +7,12 @@ description = "Secure multi-pass disk wiper (Linux/macOS). USE WITH EXTREME CAUT
 
 [dependencies]
 libc = "0.2"
+tempfile = "3.10"
+
+[lib]
+name = "destroyer"
+path = "src/lib.rs"
+
+[[bin]]
+name = "destroyer"
+path = "src/main.rs"
