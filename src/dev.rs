@@ -91,13 +91,7 @@ pub fn full_sync(file: &File) -> io::Result<()> {
         let rc = unsafe { fcntl(file.as_raw_fd(), F_FULLFSYNC) };
         if rc == -1 {
             // fallback + мягкая обработка неподдерживаемых ошибок
-            match file.sync_all() {
-                Ok(()) => Ok(()),
-                Err(e) => match e.raw_os_error() {
-                    Some(code) if code == libc::ENOTTY || code == libc::ENOTSUP || code == libc::EINVAL => Ok(()),
-                    _ => Err(e),
-                }
-            }
+            safe_sync(file);
         } else {
             Ok(())
         }
@@ -174,7 +168,6 @@ pub fn get_block_sizes(dev_path: &str) -> io::Result<BlockSizes> {
 #[cfg(target_os = "macos")]
 pub fn get_block_sizes(dev_path: &str) -> io::Result<BlockSizes> {
     use std::fs::File;
-    use std::os::fd::AsRawFd;
     use libc::{c_ulong, ioctl};
 
     const DKIOCGETBLOCKSIZE: c_ulong  = 0x4004_6418; // _IOR('d', 24, u32)

@@ -2,6 +2,7 @@ mod args;
 mod dev;
 mod wipe;
 
+use std::fs::File;
 use args::Config;
 use dev::{get_device_size_bytes, get_block_sizes, choose_buffer_size, open_device_writable, SyncMode};
 use wipe::{pass_random, pass_zeros};
@@ -33,13 +34,10 @@ fn main() {
     };
 
     // Размеры блоков и выбор буфера
-    let bs = match get_block_sizes(&cfg.device_path) {
-        Ok(b) => b,
-        Err(_) => {
-            // Если не удалось определить — используем безопасные дефолты
-            dev::BlockSizes { logical: 512, physical: 4096 }
-        }
-    };
+    let bs = get_block_sizes(&cfg.device_path).unwrap_or_else(|_| {
+        // Если не удалось определить — используем безопасные дефолты
+        dev::BlockSizes { logical: 512, physical: 4096 }
+    });
     let buf_size = choose_buffer_size(bs, cfg.buf_size);
     let sector = bs.sector() as usize;
     let use_direct = matches!(cfg.mode, SyncMode::Direct);
@@ -69,20 +67,7 @@ fn main() {
     for pass_idx in 0..cfg.passes.saturating_sub(1) {
         println!("\nПроход {}/{} (случайные данные)...", pass_idx + 1, cfg.passes);
 
-        let mut f = match open_device_writable(&cfg.device_path, cfg.mode) {
-            Ok(file) => file,
-            Err(e) => {
-                if let Some(code) = e.raw_os_error() {
-                    if code == libc::EBUSY {
-                        eprintln!("Устройство занято. Размонтируйте.");
-                        eprintln!("macOS:  diskutil unmountDisk {}", cfg.device_path);
-                        eprintln!("Linux:  sudo umount <точка_монтирования_или_/dev/..>");
-                    }
-                }
-                eprintln!("Ошибка открытия устройства: {e}");
-                std::process::exit(1);
-            }
-        };
+        let mut f = open_device(&cfg);
 
         if let Err(e) = pass_random(&mut f, buf_size, device_size, matches!(cfg.mode, SyncMode::Durable), use_direct, sector, &cfg.device_path) {
             eprintln!("Ошибка записи случайных данных: {e}");
@@ -93,7 +78,18 @@ fn main() {
     // Финальный проход нулями
     println!("\nФинальный проход {}/{} (нули)...", cfg.passes, cfg.passes);
 
-    let mut f = match open_device_writable(&cfg.device_path, cfg.mode) {
+    let mut f = open_device(&cfg);
+
+    if let Err(e) = pass_zeros(&mut f, buf_size, device_size, matches!(cfg.mode, SyncMode::Durable), use_direct, sector, &cfg.device_path) {
+        eprintln!("Ошибка записи нулей: {e}");
+        std::process::exit(1);
+    }
+
+    println!("\nУстройство {} успешно очищено", cfg.device_path);
+}
+
+fn open_device(cfg: &Config) -> File {
+    match open_device_writable(&cfg.device_path, cfg.mode) {
         Ok(file) => file,
         Err(e) => {
             if let Some(code) = e.raw_os_error() {
@@ -106,12 +102,5 @@ fn main() {
             eprintln!("Ошибка открытия устройства: {e}");
             std::process::exit(1);
         }
-    };
-
-    if let Err(e) = pass_zeros(&mut f, buf_size, device_size, matches!(cfg.mode, SyncMode::Durable), use_direct, sector, &cfg.device_path) {
-        eprintln!("Ошибка записи нулей: {e}");
-        std::process::exit(1);
     }
-
-    println!("\nУстройство {} успешно очищено", cfg.device_path);
 }
