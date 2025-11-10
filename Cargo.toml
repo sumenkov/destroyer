@@ -8,6 +8,8 @@ description = "Secure multi-pass disk wiper (Linux/macOS). USE WITH EXTREME CAUT
 [dependencies]
 libc = "0.2"
 tempfile = "3.10"
+assert_cmd = "2"
+predicates = "3"
 
 [lib]
 name = "destroyer"
