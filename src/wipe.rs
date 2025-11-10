@@ -19,7 +19,7 @@ pub fn fill_secure_random(buf: &mut [u8]) -> io::Result<()> {
 /// Короткий прогресс-бар в процентах.
 fn print_progress(done: u64, total: u64) {
     if total > 0 {
-        let percent = (done as u128 * 100u128 / total as u128) as u64;
+        let percent: u64 = (done as u128 * 100u128 / total as u128) as u64;
         print!("\rПрогресс: {}%", percent);
         let _ = io::stdout().flush();
     }
