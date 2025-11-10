@@ -55,7 +55,7 @@ fn main() {
     );
     println!("Режим: {:?}", match cfg.mode { SyncMode::Fast => "fast", SyncMode::Durable => "durable", SyncMode::Direct => "direct"});
     println!(
-        "Блоки: logical = {} B, physical = {} B; выбран буфер = {} B",
+        "Блоки: logical = {}B, physical = {}B; выбран буфер = {}B",
         bs.logical,
         bs.physical,
         buf_size
