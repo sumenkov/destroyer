@@ -98,7 +98,7 @@ fn alloc_aligned_returns_aligned_buffer() {
     assert_eq!(buf.len(), len);
 
     // Проверим, что указатель выровнен по align (на Linux используется posix_memalign)
-    buf.as_ptr() as usize;
+    let ptr: usize = buf.as_ptr() as usize;
     // На не-Linux реализация возвращает обычный Vec, так что проверка выравнивания может не соблюдаться.
     // Но размер — да.
     #[cfg(target_os = "linux")]
