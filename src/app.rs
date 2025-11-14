@@ -157,9 +157,34 @@ fn execute(cfg: Config, platform: Platform) {
 
     let elapsed = started.elapsed();
     println!(
-        "\nУстройство {} успешно очищено (время: {:.2?})",
-        cfg.device_path, elapsed
+        "\nУстройство {} успешно очищено (время: {})",
+        cfg.device_path,
+        format_duration(elapsed)
     );
+}
+
+fn format_duration(dur: Duration) -> String {
+    let total_secs = dur.as_secs();
+    if total_secs >= 86_400 {
+        let days = total_secs / 86_400;
+        let hours = (total_secs % 86_400) / 3600;
+        let minutes = (total_secs % 3600) / 60;
+        let seconds = total_secs % 60;
+        format!("{days}d {hours:02}:{minutes:02}:{seconds:02}")
+    } else if total_secs >= 3600 {
+        let hours = total_secs / 3600;
+        let minutes = (total_secs % 3600) / 60;
+        let seconds = total_secs % 60;
+        format!("{hours:02}:{minutes:02}:{seconds:02}")
+    } else if total_secs >= 60 {
+        let minutes = total_secs / 60;
+        let seconds = total_secs % 60;
+        format!("{minutes:02}:{seconds:02}")
+    } else if total_secs > 0 {
+        format!("{total_secs}s")
+    } else {
+        format!("{:.2}s", dur.as_secs_f64())
+    }
 }
 
 fn open_device(cfg: &Config, mode: SyncMode) -> File {
