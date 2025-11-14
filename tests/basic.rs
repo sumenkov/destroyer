@@ -13,10 +13,11 @@ mod dev;
 mod wipe;
 
 use crate::args::Config;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
-use std::path::PathBuf;
-use tempfile::NamedTempFile;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 //
 // -------- tests for args::Config::parse --------
 //
@@ -100,26 +101,60 @@ fn alloc_aligned_returns_aligned_buffer() {
     assert_eq!(buf.len(), len);
 
     // Проверим, что указатель выровнен по align (на Linux используется posix_memalign)
-    let ptr: usize = buf.as_ptr() as usize;
-    // На не-Linux реализация возвращает обычный Vec, так что проверка выравнивания может не соблюдаться.
-    // Но размер — да.
     #[cfg(target_os = "linux")]
-    assert_eq!(ptr % align, 0);
+    {
+        let ptr: usize = buf.as_ptr() as usize;
+        assert_eq!(ptr % align, 0);
+    }
 }
 
 //
 // -------- tests for wipe passes on a regular file --------
 //
 
-fn create_sparse_temp(size: u64) -> tempfile::NamedTempFile {
-    let tf: NamedTempFile = tempfile::NamedTempFile::new().expect("tempfile");
-    tf.as_file().set_len(size).expect("set_len");
-    tf
+#[derive(Debug)]
+struct TempFile {
+    path: PathBuf,
+}
+
+impl TempFile {
+    fn new(size: u64) -> Self {
+        let path: PathBuf = unique_temp_path();
+        let file: File = File::create(&path).expect("tempfile create");
+        file.set_len(size).expect("set_len");
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+fn unique_temp_path() -> PathBuf {
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
+    let mut path: PathBuf = std::env::temp_dir();
+    let nanos: u128 = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let idx: usize = COUNTER.fetch_add(1, Ordering::SeqCst);
+    path.push(format!("destroyer-test-{nanos}-{idx}"));
+    path
+}
+
+fn create_sparse_temp(size: u64) -> TempFile {
+    TempFile::new(size)
 }
 
 #[test]
 fn pass_zeros_writes_zeros() {
-    let tmp: NamedTempFile = create_sparse_temp(128 * 1024);
+    let tmp: TempFile = create_sparse_temp(128 * 1024);
     let path: PathBuf = tmp.path().to_path_buf();
     let mut f: File = File::options().read(true).write(true).open(&path).unwrap();
 
@@ -149,7 +184,7 @@ fn pass_zeros_writes_zeros() {
 
 #[test]
 fn pass_random_writes_nonzero_somewhere() {
-    let tmp: NamedTempFile = create_sparse_temp(128 * 1024);
+    let tmp: TempFile = create_sparse_temp(128 * 1024);
     let path: PathBuf = tmp.path().to_path_buf();
     let mut f: File = File::options().read(true).write(true).open(&path).unwrap();
 

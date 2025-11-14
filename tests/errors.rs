@@ -2,49 +2,68 @@
 #[path = "../src/dev.rs"]
 mod dev;
 
-use assert_cmd::prelude::*;
-use predicates::prelude::*;
-use std::process::Command;
-
-fn bin() -> Command {
-    Command::cargo_bin("destroyer").expect("binary build")
-}
+use std::process::{Command, Output};
 
 //
 // -------- CLI argument error cases (process::exit) --------
 // These are run as subprocesses so that exit(1) doesn't kill the test runner.
 //
 
+fn run(args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_destroyer"))
+        .args(args)
+        .output()
+        .expect("binary build")
+}
+
 #[test]
 fn cli_non_numeric_passes_fails() {
-    let mut cmd = bin();
-    cmd.arg("/dev/null").arg("notanumber");
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("Число проходов").or(predicate::str::contains("error")));
+    let out = run(&["/dev/null", "notanumber"]);
+    assert!(
+        !out.status.success(),
+        "expected failure, got {:?}",
+        out.status
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("Число проходов") || stderr.contains("error"),
+        "stderr: {stderr}"
+    );
 }
 
 #[test]
 fn cli_zero_passes_fails() {
-    let mut cmd = bin();
-    cmd.arg("/dev/null").arg("0");
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains(">=").or(predicate::str::contains("0")));
+    let out = run(&["/dev/null", "0"]);
+    assert!(
+        !out.status.success(),
+        "expected failure, got {:?}",
+        out.status
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains(">=") || stderr.contains("0"),
+        "stderr: {stderr}"
+    );
 }
 
 #[test]
 fn cli_invalid_mode_fails() {
-    let mut cmd = bin();
-    cmd.args(["/dev/null", "1", "--mode", "wat"]);
-    cmd.assert().failure();
+    let out = run(&["/dev/null", "1", "--mode", "wat"]);
+    assert!(
+        !out.status.success(),
+        "expected failure, got {:?}",
+        out.status
+    );
 }
 
 #[test]
 fn cli_negative_buf_fails() {
-    let mut cmd = bin();
-    cmd.args(["/dev/null", "1", "--buf", "-1"]);
-    cmd.assert().failure();
+    let out = run(&["/dev/null", "1", "--buf", "-1"]);
+    assert!(
+        !out.status.success(),
+        "expected failure, got {:?}",
+        out.status
+    );
 }
 
 //
