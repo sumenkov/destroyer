@@ -7,7 +7,7 @@ use crate::wipe::{Buffers, ProgressTracker, pass_random, pass_zeros};
 use std::fs::File;
 use std::io::{Seek, SeekFrom};
 use std::thread::sleep;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Операционная система, под которую собрана программа.
 #[derive(Clone, Copy, Debug)]
@@ -32,6 +32,7 @@ pub fn run(platform: Platform) {
 }
 
 fn execute(cfg: Config, platform: Platform) {
+    let started = Instant::now();
     println!("Платформа: {}", platform.name());
 
     let device_size: u64 = match get_device_size_bytes(&cfg.device_path) {
@@ -154,7 +155,11 @@ fn execute(cfg: Config, platform: Platform) {
         std::process::exit(1);
     }
 
-    println!("\nУстройство {} успешно очищено", cfg.device_path);
+    let elapsed = started.elapsed();
+    println!(
+        "\nУстройство {} успешно очищено (время: {:.2?})",
+        cfg.device_path, elapsed
+    );
 }
 
 fn open_device(cfg: &Config, mode: SyncMode) -> File {
