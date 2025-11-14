@@ -20,6 +20,8 @@
 - [Un-mounting / Freeing a Device](#un-mounting--freeing-a-device)
 - [Tuning & Performance](#tuning--performance)
 - [Troubleshooting](#troubleshooting)
+- [Architecture](#architecture)
+- [Development Workflow](#development-workflow)
 - [License](#license)
 
 ## What is it?

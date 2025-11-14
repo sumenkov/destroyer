@@ -15,11 +15,14 @@
 - [构建](#构建)
 - [运行](#运行)
 - [模式](#模式)
-- [直接 I/O（Linux O_DIRECT）](#直接-io-linux-o_direct)
+- [直接 IO (Linux O_DIRECT)](#直接-io-linux-o_direct)
 - [示例](#示例)
 - [卸载 / 释放设备](#卸载--释放设备)
 - [调优与性能](#调优与性能)
 - [故障排查](#故障排查)
+- [架构](#架构)
+- [开发流程](#开发流程)
+- [Features](#features)
 - [许可证](#许可证)
 
 ## 简介
@@ -90,7 +93,7 @@ sudo target/release/destroyer <设备> [遍数] [--mode fast|durable] [--buf BYT
   - **Linux**：以 `O_SYNC` 打开（每次 `write()` 等待数据稳定落盘）。
   - **macOS**：关闭缓存（`F_NOCACHE`）并在遍历结束时用 `F_FULLFSYNC` 进行强制刷新。
 
-## 直接 I/O（Linux O_DIRECT）
+## 直接 IO (Linux O_DIRECT)
 `--mode direct` 使用 Linux **O_DIRECT** 绕过页面缓存，避免大规模顺序写入污染系统缓存。
 
 约束：
@@ -149,17 +152,14 @@ sudo dmsetup ls
 - 平台特定的运行器位于 `src/platform/`：Linux 使用 `platform::linux::run`，macOS 使用 `platform::macos::run`，可在其中添加各自的调试逻辑或额外保护，然后调用共享的 `app::run`。
 - 二进制入口 `src/main.rs` 通过 `#[cfg(target_os = "...")]` 在编译期选择对应运行器，因此在某个平台上迭代功能不会影响到另一个平台，除非修改了公共模块。
 
-## 架构
-- `cargo test --features test-support` —— 启用测试辅助功能的集成测试。
-- `cargo clippy --release -- -W clippy::perf` —— 提前发现性能问题。
-- `cargo bench --features test-support` —— 运行 Criterion 基准测试，比较不同缓冲区。
+## 开发流程
 - `cargo test --features test-support` —— 启用测试辅助功能的集成测试。
 - `cargo clippy --release -- -W clippy::perf` —— 提前发现性能问题。
 - `cargo bench --features test-support` —— 运行 Criterion 基准测试，比较不同缓冲区。
 - `cargo bloat --release -n 20` —— 监控可执行体大小变化。
 - `cargo asm --release destroyer::wipe::pass_random` —— 分析关键路径汇编。
 
-### Features
+## Features
 | Feature        | 默认 | 说明                                  |
 |----------------|------|---------------------------------------|
 | `durable`      | ✅    | O_SYNC / F_FULLFSYNC 耐久模式。       |
