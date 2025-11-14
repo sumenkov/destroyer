@@ -134,6 +134,11 @@ sudo dmsetup ls
 - **`Inappropriate ioctl for device (os error 25)` on sync:** some raw devices don’t support `fsync`. The tool uses safe fallbacks.
 - **Permission denied:** run with `sudo`.
 
+## Architecture
+- Core logic (argument parsing, device helpers, wiping routines) lives in the `destroyer` library crate (`src/args.rs`, `src/dev.rs`, `src/wipe.rs`, `src/app.rs`).
+- Platform-specific runners reside in `src/platform/`. For Linux the entry point is `platform::linux::run`, for macOS — `platform::macos::run`; each can host OS-only setup, debugging flags, or extra safeguards before calling the shared `app::run`.
+- The binary `src/main.rs` selects the right runner at compile time via `#[cfg(target_os = "...")]`, so extending behaviour for one OS never affects the other unless you change shared modules explicitly.
+
 ## License
 MIT License. Translations provided for convenience:
 - [LICENSE (English)](./LICENSE)

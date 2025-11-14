@@ -134,6 +134,11 @@ sudo dmsetup ls
 - **同步时报 `Inappropriate ioctl for device`**：部分原始设备不支持 `fsync`，程序会使用安全的降级处理。
 - **Permission denied**：使用 `sudo` 运行。
 
+## 架构
+- 核心逻辑（参数解析、设备辅助、写入流程）集中在 `destroyer` 库模块中（`src/args.rs`、`src/dev.rs`、`src/wipe.rs`、`src/app.rs`）。
+- 平台特定的运行器位于 `src/platform/`：Linux 使用 `platform::linux::run`，macOS 使用 `platform::macos::run`，可在其中添加各自的调试逻辑或额外保护，然后调用共享的 `app::run`。
+- 二进制入口 `src/main.rs` 通过 `#[cfg(target_os = "...")]` 在编译期选择对应运行器，因此在某个平台上迭代功能不会影响到另一个平台，除非修改了公共模块。
+
 ## 许可证
 MIT。以下为便利性翻译：
 - [LICENSE（英文）](./LICENSE)
