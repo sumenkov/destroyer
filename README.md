@@ -60,6 +60,8 @@ source $HOME/.cargo/env
 ## Build
 ```bash
 cargo build --release
+# Production (nightly) build with panic-abort std:
+cargo +nightly build --release -Zbuild-std=std,panic_abort
 ```
 
 ## Usage
@@ -73,6 +75,7 @@ sudo target/release/destroyer <device> [passes] [--mode fast|durable] [--buf BYT
 - `--mode` — `fast` (default) or `durable` (see below).
 - `--buf BYTES` — write buffer size. If omitted, buffer size is **chosen automatically**
   based on the device block size (aligned to sector; ~64 KiB target within 16 KiB..1 MiB).
+- `--quiet` — suppress progress output (slightly faster, less console noise).
 
 ## Modes
 - `fast` — speed oriented.
@@ -138,6 +141,10 @@ sudo dmsetup ls
 - Core logic (argument parsing, device helpers, wiping routines) lives in the `destroyer` library crate (`src/args.rs`, `src/dev.rs`, `src/wipe.rs`, `src/app.rs`).
 - Platform-specific runners reside in `src/platform/`. For Linux the entry point is `platform::linux::run`, for macOS — `platform::macos::run`; each can host OS-only setup, debugging flags, or extra safeguards before calling the shared `app::run`.
 - The binary `src/main.rs` selects the right runner at compile time via `#[cfg(target_os = "...")]`, so extending behaviour for one OS never affects the other unless you change shared modules explicitly.
+
+- `cargo test --features test-support` — run integration tests (includes temp-file helpers kept out of release builds).
+- `cargo clippy --release -- -W clippy::perf` — catch perf regressions before release.
+- `cargo bench --features test-support` — run Criterion benchmarks for different buffer sizes.
 
 ## License
 MIT License. Translations provided for convenience:

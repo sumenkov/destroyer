@@ -1,3 +1,5 @@
+#![cfg(feature = "test-support")]
+
 // tests/basic.rs
 // Интеграционные тесты: подключаем исходники напрямую через #[path],
 // чтобы не зависеть от имени крейта и не модифицировать существующие файлы.
@@ -13,6 +15,7 @@ mod dev;
 mod wipe;
 
 use crate::args::Config;
+use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -24,11 +27,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
 fn parse_minimal_ok() {
-    let argv: Vec<String> = vec![
-        "destroyer".to_string(),
-        "/tmp/fake_device".to_string(),
-        "2".to_string(),
-    ];
+    let argv: Vec<OsString> = vec!["destroyer".into(), "/tmp/fake_device".into(), "2".into()];
     let cfg: Config = args::Config::parse(argv);
     assert_eq!(cfg.device_path, "/tmp/fake_device");
     assert_eq!(cfg.passes, 2);
@@ -40,16 +39,17 @@ fn parse_minimal_ok() {
     }
 }
 
+#[cfg(feature = "durable")]
 #[test]
 fn parse_with_flags_ok() {
-    let argv: Vec<String> = vec![
-        "destroyer".to_string(),
-        "/dev/sda".to_string(),
-        "3".to_string(),
-        "--mode".to_string(),
-        "durable".to_string(),
-        "--buf".to_string(),
-        "65536".to_string(),
+    let argv: Vec<OsString> = vec![
+        "destroyer".into(),
+        "/dev/sda".into(),
+        "3".into(),
+        "--mode".into(),
+        "durable".into(),
+        "--buf".into(),
+        "65536".into(),
     ];
     let cfg: Config = args::Config::parse(argv);
     assert_eq!(cfg.device_path, "/dev/sda");
@@ -160,17 +160,18 @@ fn pass_zeros_writes_zeros() {
 
     let buf_size: usize = 32 * 1024;
     // direct=false, sector не используется; dev_path только для хвоста при direct=true
-    let mut progress = wipe::ProgressTracker::new(1, 128 * 1024);
+    let mut progress = wipe::ProgressTracker::new(1, 128 * 1024, true);
     progress.start_pass(1);
+    let mut buffers = wipe::Buffers::new(buf_size, false, 4096).expect("buffers");
     wipe::pass_zeros(
         &mut f,
-        buf_size,
         128 * 1024,
-        false,
         false,
         4096,
         path.to_str().unwrap(),
         &mut progress,
+        &mut buffers,
+        None,
     )
     .expect("pass_zeros");
 
@@ -189,17 +190,18 @@ fn pass_random_writes_nonzero_somewhere() {
     let mut f: File = File::options().read(true).write(true).open(&path).unwrap();
 
     let buf_size: usize = 32 * 1024;
-    let mut progress = wipe::ProgressTracker::new(1, 128 * 1024);
+    let mut progress = wipe::ProgressTracker::new(1, 128 * 1024, true);
     progress.start_pass(1);
+    let mut buffers = wipe::Buffers::new(buf_size, false, 4096).expect("buffers");
     wipe::pass_random(
         &mut f,
-        buf_size,
         128 * 1024,
-        false,
         false,
         4096,
         path.to_str().unwrap(),
         &mut progress,
+        &mut buffers,
+        None,
     )
     .expect("pass_random");
 

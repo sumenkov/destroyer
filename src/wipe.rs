@@ -13,10 +13,12 @@ pub struct ProgressTracker {
     total_bytes_done: u64,
     pass_bytes_done: u64,
     current_pass: usize,
+    quiet: bool,
+    line_buf: Vec<u8>,
 }
 
 impl ProgressTracker {
-    pub fn new(total_passes: usize, device_size: u64) -> Self {
+    pub fn new(total_passes: usize, device_size: u64, quiet: bool) -> Self {
         Self {
             total_start: Instant::now(),
             pass_start: Instant::now(),
@@ -26,6 +28,8 @@ impl ProgressTracker {
             total_bytes_done: 0,
             pass_bytes_done: 0,
             current_pass: 0,
+            quiet,
+            line_buf: Vec::with_capacity(96),
         }
     }
 
@@ -41,12 +45,15 @@ impl ProgressTracker {
         self.print_status();
     }
 
-    pub fn finish_line(&self) {
-        println!();
+    pub fn finish_line(&mut self) {
+        if self.quiet {
+            return;
+        }
+        let _ = io::stdout().write_all(b"\n");
     }
 
-    fn print_status(&self) {
-        if self.device_size == 0 {
+    fn print_status(&mut self) {
+        if self.quiet || self.device_size == 0 {
             return;
         }
         let percent: f64 =
@@ -59,14 +66,21 @@ impl ProgressTracker {
             self.total_start,
         );
 
-        print!(
-            "\rПасс {}/{} | Прогресс: {:>3}% | Осталось проход: {} | Осталось всего: {}",
-            self.current_pass,
-            self.total_passes,
-            percent.round() as u64,
-            format_eta(pass_eta),
-            format_eta(total_eta),
-        );
+        self.line_buf.clear();
+        self.line_buf.extend_from_slice("\rПасс ".as_bytes());
+        push_num(&mut self.line_buf, self.current_pass as u64);
+        self.line_buf.push(b'/');
+        push_num(&mut self.line_buf, self.total_passes as u64);
+        self.line_buf.extend_from_slice(" | Прогресс: ".as_bytes());
+        push_percent(&mut self.line_buf, percent.round() as u64);
+        self.line_buf
+            .extend_from_slice("% | Осталось проход: ".as_bytes());
+        append_eta(&mut self.line_buf, pass_eta);
+        self.line_buf
+            .extend_from_slice(" | Осталось всего: ".as_bytes());
+        append_eta(&mut self.line_buf, total_eta);
+
+        let _ = io::stdout().write_all(&self.line_buf);
         let _ = io::stdout().flush();
     }
 
@@ -94,30 +108,67 @@ impl ProgressTracker {
     }
 }
 
-fn format_eta(eta: Option<Duration>) -> String {
+fn push_num(buf: &mut Vec<u8>, mut n: u64) {
+    if n == 0 {
+        buf.push(b'0');
+        return;
+    }
+    let mut tmp = [0u8; 20];
+    let mut idx = tmp.len();
+    while n > 0 {
+        idx -= 1;
+        tmp[idx] = b'0' + (n % 10) as u8;
+        n /= 10;
+    }
+    buf.extend_from_slice(&tmp[idx..]);
+}
+
+fn push_percent(buf: &mut Vec<u8>, percent: u64) {
+    let p = percent.min(100);
+    if p < 100 {
+        if p < 10 {
+            buf.push(b' ');
+            buf.push(b' ');
+        } else {
+            buf.push(b' ');
+        }
+    }
+    push_num(buf, p);
+}
+
+fn append_eta(buf: &mut Vec<u8>, eta: Option<Duration>) {
     match eta {
         Some(dur) => {
             let mut secs: u64 = dur.as_secs();
             if dur.subsec_nanos() > 0 {
                 secs = secs.saturating_add(1);
             }
-            format_duration(secs)
+            if secs >= 3600 {
+                let hours = secs / 3600;
+                let minutes = (secs % 3600) / 60;
+                let seconds = secs % 60;
+                push_num(buf, hours);
+                buf.push(b':');
+                push_two_digits(buf, minutes as u8);
+                buf.push(b':');
+                push_two_digits(buf, seconds as u8);
+            } else {
+                let minutes = secs / 60;
+                let seconds = secs % 60;
+                push_two_digits(buf, minutes as u8);
+                buf.push(b':');
+                push_two_digits(buf, seconds as u8);
+            }
         }
-        None => "--:--".to_string(),
+        None => buf.extend_from_slice(b"--:--"),
     }
 }
 
-fn format_duration(total_secs: u64) -> String {
-    if total_secs >= 3600 {
-        let hours = total_secs / 3600;
-        let minutes = (total_secs % 3600) / 60;
-        let seconds = total_secs % 60;
-        format!("{hours:02}:{minutes:02}:{seconds:02}")
-    } else {
-        let minutes = total_secs / 60;
-        let seconds = total_secs % 60;
-        format!("{minutes:02}:{seconds:02}")
-    }
+fn push_two_digits(buf: &mut Vec<u8>, value: u8) {
+    let tens = value / 10;
+    let ones = value % 10;
+    buf.push(b'0' + tens);
+    buf.push(b'0' + ones);
 }
 
 /// Заполнить буфер криптографически стойкими случайными байтами из `/dev/urandom`.
@@ -134,25 +185,60 @@ pub fn fill_secure_random(buf: &mut [u8]) -> io::Result<()> {
     Ok(())
 }
 
+/// Набор буферов, переиспользуемых между проходами, включая хвост для O_DIRECT.
+pub struct Buffers {
+    main: Box<[u8]>,
+    tail: Vec<u8>,
+    use_direct: bool,
+}
+
+impl Buffers {
+    pub fn new(buf_size: usize, use_direct: bool, sector: usize) -> io::Result<Self> {
+        let main = if use_direct {
+            alloc_aligned(buf_size, sector)?
+        } else {
+            vec![0u8; buf_size].into_boxed_slice()
+        };
+        let tail_capacity = if use_direct { sector.max(1) } else { 0 };
+        Ok(Self {
+            main,
+            tail: vec![0u8; tail_capacity],
+            use_direct,
+        })
+    }
+
+    pub fn main_mut(&mut self) -> &mut [u8] {
+        &mut self.main
+    }
+
+    pub fn tail_buf(&mut self, len: usize) -> &mut [u8] {
+        if self.tail.len() < len {
+            self.tail.resize(len, 0);
+        }
+        &mut self.tail[..len]
+    }
+
+    pub fn use_direct(&self) -> bool {
+        self.use_direct
+    }
+}
+
 /// Один проход перезаписи случайными данными (новая генерация буфера на каждый проход).
 /// Если дескриптор открыт в режиме O_DIRECT (Linux), буфер должен быть выровнен,
 /// длина записи кратна `sector`, а смещение — кратно `sector`.
 pub fn pass_random(
     file: &mut File,
-    buf_size: usize,
     device_size: u64,
     durable: bool,
-    use_direct: bool,
     sector: usize,
     dev_path: &str,
     progress: &mut ProgressTracker,
+    buffers: &mut Buffers,
+    tail_handle: Option<&mut File>,
 ) -> io::Result<()> {
-    let mut buf: Box<[u8]> = if use_direct {
-        alloc_aligned(buf_size, sector)?
-    } else {
-        vec![0u8; buf_size].into_boxed_slice()
-    };
-    fill_secure_random(&mut buf)?;
+    let use_direct = buffers.use_direct();
+    let buf: &mut [u8] = buffers.main_mut();
+    fill_secure_random(buf)?;
 
     let mut written_total: u64 = 0;
     let full_limit: u64 = if use_direct {
@@ -161,27 +247,42 @@ pub fn pass_random(
         device_size
     };
 
-    write_full_pass(file, &buf, &mut written_total, full_limit, progress)?;
+    write_full_pass(file, buf, &mut written_total, full_limit, progress)?;
 
     // Если остался «хвост» не кратный сектору — допишем обычным дескриптором.
+    #[cfg(feature = "direct")]
     if use_direct {
         let tail: u64 = device_size.saturating_sub(written_total);
         if tail > 0 {
-            let mut tail_fd = open_device_writable(dev_path, SyncMode::Fast)?;
-            tail_fd.seek(SeekFrom::Start(written_total))?;
             // использовать невыравненный обычный буфер
-            let mut tbuf = vec![0u8; tail as usize];
+            let tbuf = buffers.tail_buf(tail as usize);
             // для случайных данных — важно не повторять шаблон из aligned-буфера
-            fill_secure_random(&mut tbuf)?;
-            tail_fd.write_all(&tbuf)?;
-            progress.record_chunk(tail);
-            if durable {
-                full_sync(&tail_fd)?;
+            fill_secure_random(tbuf)?;
+
+            if let Some(writer) = tail_handle {
+                writer.seek(SeekFrom::Start(written_total))?;
+                writer.write_all(tbuf)?;
+                progress.record_chunk(tail);
+                if durable {
+                    full_sync(writer)?;
+                } else {
+                    safe_sync(writer)?;
+                }
             } else {
-                safe_sync(&tail_fd)?;
+                let mut writer = open_device_writable(dev_path, SyncMode::Fast)?;
+                writer.seek(SeekFrom::Start(written_total))?;
+                writer.write_all(tbuf)?;
+                progress.record_chunk(tail);
+                if durable {
+                    full_sync(&writer)?;
+                } else {
+                    safe_sync(&writer)?;
+                }
             }
         }
     }
+    #[cfg(not(feature = "direct"))]
+    let _ = (dev_path, tail_handle);
 
     progress.finish_line();
 
@@ -197,19 +298,17 @@ pub fn pass_random(
 /// Финальный проход нулями.
 pub fn pass_zeros(
     file: &mut File,
-    buf_size: usize,
     device_size: u64,
     durable: bool,
-    use_direct: bool,
     sector: usize,
     dev_path: &str,
     progress: &mut ProgressTracker,
+    buffers: &mut Buffers,
+    tail_handle: Option<&mut File>,
 ) -> io::Result<()> {
-    let buf: Box<[u8]> = if use_direct {
-        alloc_aligned(buf_size, sector)?
-    } else {
-        vec![0u8; buf_size].into_boxed_slice()
-    };
+    let use_direct = buffers.use_direct();
+    let buf: &mut [u8] = buffers.main_mut();
+    buf.fill(0);
 
     let mut written_total: u64 = 0;
     let full_limit: u64 = if use_direct {
@@ -218,23 +317,39 @@ pub fn pass_zeros(
         device_size
     };
 
-    write_full_pass(file, &buf, &mut written_total, full_limit, progress)?;
+    write_full_pass(file, buf, &mut written_total, full_limit, progress)?;
 
+    #[cfg(feature = "direct")]
     if use_direct {
         let tail: u64 = device_size.saturating_sub(written_total);
         if tail > 0 {
-            let mut tail_fd: File = open_device_writable(dev_path, SyncMode::Fast)?;
-            tail_fd.seek(SeekFrom::Start(written_total))?;
-            let tbuf: Vec<u8> = vec![0u8; tail as usize];
-            tail_fd.write_all(&tbuf)?;
-            progress.record_chunk(tail);
-            if durable {
-                full_sync(&tail_fd)?;
+            let tbuf = buffers.tail_buf(tail as usize);
+            tbuf.fill(0);
+
+            if let Some(writer) = tail_handle {
+                writer.seek(SeekFrom::Start(written_total))?;
+                writer.write_all(tbuf)?;
+                progress.record_chunk(tail);
+                if durable {
+                    full_sync(writer)?;
+                } else {
+                    safe_sync(writer)?;
+                }
             } else {
-                safe_sync(&tail_fd)?;
+                let mut writer: File = open_device_writable(dev_path, SyncMode::Fast)?;
+                writer.seek(SeekFrom::Start(written_total))?;
+                writer.write_all(tbuf)?;
+                progress.record_chunk(tail);
+                if durable {
+                    full_sync(&writer)?;
+                } else {
+                    safe_sync(&writer)?;
+                }
             }
         }
     }
+    #[cfg(not(feature = "direct"))]
+    let _ = (dev_path, tail_handle);
 
     progress.finish_line();
 
@@ -248,7 +363,7 @@ pub fn pass_zeros(
 
 fn write_full_pass(
     file: &mut File,
-    buf: &[u8],
+    buf: &mut [u8],
     written_total: &mut u64,
     full_limit: u64,
     progress: &mut ProgressTracker,

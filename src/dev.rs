@@ -5,15 +5,50 @@ use std::io::{self, Seek, SeekFrom};
 use std::os::fd::{AsRawFd, FromRawFd};
 
 /// Режим синхронизации.
-#[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub enum SyncMode {
     /// Быстро: минимальные барьеры.
     Fast,
     /// Надёжно: O_SYNC (Linux); на macOS используем F_NOCACHE + F_FULLFSYNC при вызове full_sync().
+    #[cfg(feature = "durable")]
     Durable,
     /// Прямой I/O: Linux O_DIRECT (требует выровненных буферов/длин/смещений).
+    #[cfg(feature = "direct")]
     Direct,
+}
+
+impl SyncMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            SyncMode::Fast => "fast",
+            #[cfg(feature = "durable")]
+            SyncMode::Durable => "durable",
+            #[cfg(feature = "direct")]
+            SyncMode::Direct => "direct",
+        }
+    }
+
+    pub fn is_durable(self) -> bool {
+        #[cfg(feature = "durable")]
+        {
+            matches!(self, SyncMode::Durable)
+        }
+        #[cfg(not(feature = "durable"))]
+        {
+            false
+        }
+    }
+
+    pub fn is_direct(self) -> bool {
+        #[cfg(feature = "direct")]
+        {
+            matches!(self, SyncMode::Direct)
+        }
+        #[cfg(not(feature = "direct"))]
+        {
+            false
+        }
+    }
 }
 
 /// Открыть устройство на запись с нужной политикой.
@@ -21,13 +56,15 @@ pub fn open_device_writable(dev_path: &str, mode: SyncMode) -> io::Result<File> 
     #[cfg(target_os = "linux")]
     {
         use libc::{O_DIRECT, O_SYNC, O_WRONLY, open};
-        let c: CString = CString::new(dev_path).unwrap();
+        let c: CString = path_to_cstring(dev_path)?;
         let mut flags: c_int = O_WRONLY;
         match mode {
             SyncMode::Fast => {}
+            #[cfg(feature = "durable")]
             SyncMode::Durable => {
                 flags |= O_SYNC;
             }
+            #[cfg(feature = "direct")]
             SyncMode::Direct => {
                 flags |= O_DIRECT;
             }
@@ -44,7 +81,7 @@ pub fn open_device_writable(dev_path: &str, mode: SyncMode) -> io::Result<File> 
     #[cfg(target_os = "macos")]
     {
         use libc::{F_NOCACHE, O_WRONLY, fcntl, open};
-        let c: CString = CString::new(dev_path).unwrap();
+        let c: CString = path_to_cstring(dev_path)?;
         let fd: c_int = unsafe { open(c.as_ptr(), O_WRONLY, 0) };
         if fd < 0 {
             return Err(io::Error::last_os_error());
@@ -91,6 +128,7 @@ pub fn safe_sync(file: &File) -> io::Result<()> {
 /// Жёсткая синхронизация:
 /// - Linux: обычный fsync.
 /// - macOS: fcntl(F_FULLFSYNC) — честный flush, очень дорого, вызывать после прохода.
+#[cfg(feature = "durable")]
 pub fn full_sync(file: &File) -> io::Result<()> {
     #[cfg(target_os = "linux")]
     {
@@ -130,11 +168,23 @@ pub fn full_sync(file: &File) -> io::Result<()> {
     }
 }
 
+#[cfg(not(feature = "durable"))]
+pub fn full_sync(_file: &File) -> io::Result<()> {
+    Ok(())
+}
+
 /// Выровненный буфер под O_DIRECT: адрес и длина кратны `align` (обычно сектору: 4096 и т.п.)
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "direct"))]
 pub fn alloc_aligned(len: usize, align: usize) -> io::Result<Box<[u8]>> {
     use libc::posix_memalign;
-    assert!(align.is_power_of_two(), "align должен быть степенью двойки");
+    #[cfg(debug_assertions)]
+    debug_assert!(align.is_power_of_two(), "align должен быть степенью двойки");
+    if !align.is_power_of_two() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "alignment must be a power of two",
+        ));
+    }
     let mut ptr: *mut libc::c_void = std::ptr::null_mut();
     let rc: c_int = unsafe { posix_memalign(&mut ptr, align, len) };
     if rc != 0 {
@@ -148,11 +198,20 @@ pub fn alloc_aligned(len: usize, align: usize) -> io::Result<Box<[u8]>> {
     Ok(unsafe { Box::from_raw(slice) })
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(all(target_os = "linux", feature = "direct")))]
 pub fn alloc_aligned(len: usize, _align: usize) -> io::Result<Box<[u8]>> {
     // На не-Linux O_DIRECT не используем — вернём обычный буфер.
     let v: Box<[u8]> = vec![0u8; len].into_boxed_slice();
     Ok(v)
+}
+
+fn path_to_cstring(dev_path: &str) -> io::Result<CString> {
+    CString::new(dev_path).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "device path contains interior NUL byte",
+        )
+    })
 }
 
 /// Размеры блока (логический и физический) в байтах.

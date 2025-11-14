@@ -1,4 +1,6 @@
 use crate::dev::SyncMode;
+use std::ffi::OsString;
+use std::iter::Peekable;
 use std::process::exit;
 
 /// Конфигурация запуска.
@@ -9,6 +11,7 @@ pub struct Config {
     /// Если None — будет выбран автоматически по размеру блока устройства.
     pub buf_size: Option<usize>,
     pub mode: SyncMode,
+    pub quiet: bool,
 }
 
 impl Config {
@@ -17,66 +20,84 @@ impl Config {
     /// Форматы:
     ///   destroyer <device> [passes]
     ///   destroyer <device> [passes] --mode fast|durable|direct [--buf BYTES]
-    pub fn parse(mut args: Vec<String>) -> Self {
-        if args.len() < 2 {
-            eprintln!(
-                "{}",
-                Self::usage(&args.get(0).map(String::as_str).unwrap_or("destroyer"))
-            );
-            exit(1);
-        }
+    pub fn parse<I>(args: I) -> Self
+    where
+        I: IntoIterator<Item = OsString>,
+    {
+        let mut iter: Peekable<_> = args.into_iter().peekable();
+        let prog = iter
+            .next()
+            .and_then(|s| s.into_string().ok())
+            .unwrap_or_else(|| {
+                eprintln!("{}", Self::usage("destroyer"));
+                exit(1);
+            });
 
-        let prog: String = args.remove(0);
         let mut device_path: Option<String> = None;
         let mut passes: Option<usize> = None;
         let mut buf_size: Option<usize> = None;
         let mut mode: SyncMode = SyncMode::Fast;
+        let mut quiet: bool = false;
 
-        let mut i: usize = 0usize;
-        while i < args.len() {
-            match args[i].as_str() {
-                "--help" | "-h" => {
+        while let Some(arg) = iter.next() {
+            match arg.to_str() {
+                Some("--help") | Some("-h") => {
                     eprintln!("{}", Self::usage(&prog));
                     exit(0);
                 }
-                "--mode" => {
-                    if i + 1 >= args.len() {
+                Some("--mode") => {
+                    let val = iter.next().unwrap_or_else(|| {
                         eprintln!("--mode требует аргумент: fast|durable|direct");
                         exit(1);
-                    }
-                    let val: &str = args[i + 1].as_str();
-                    mode = match val {
+                    });
+                    let val_str = val.to_str().unwrap_or_else(|| {
+                        eprintln!("--mode принимает только UTF-8 значения");
+                        exit(1);
+                    });
+                    mode = match val_str {
                         "fast" => SyncMode::Fast,
-                        "durable" => SyncMode::Durable,
+                        "durable" => {
+                            #[cfg(feature = "durable")]
+                            {
+                                SyncMode::Durable
+                            }
+                            #[cfg(not(feature = "durable"))]
+                            {
+                                eprintln!("Режим 'durable' недоступен в текущей сборке.");
+                                exit(1);
+                            }
+                        }
                         "direct" => {
-                            // На Linux разрешаем, на macOS выдадим понятную ошибку в main при попытке открыть.
-                            #[cfg(target_os = "linux")]
+                            #[cfg(all(feature = "direct", target_os = "linux"))]
                             {
                                 SyncMode::Direct
                             }
-                            #[cfg(not(target_os = "linux"))]
+                            #[cfg(not(all(feature = "direct", target_os = "linux")))]
                             {
                                 eprintln!(
-                                    "Режим 'direct' поддерживается только на Linux (O_DIRECT)."
+                                    "Режим 'direct' поддерживается только на Linux и при включённом флаге сборки."
                                 );
                                 exit(1);
                             }
                         }
-                        _ => {
+                        other => {
                             eprintln!(
-                                "Неизвестное значение --mode: {val}. Ожидается fast|durable|direct"
+                                "Неизвестное значение --mode: {other}. Ожидается fast|durable|direct"
                             );
                             exit(1);
                         }
                     };
-                    i += 2;
                 }
-                "--buf" => {
-                    if i + 1 >= args.len() {
+                Some("--buf") => {
+                    let val = iter.next().unwrap_or_else(|| {
                         eprintln!("--buf требует число байт");
                         exit(1);
-                    }
-                    let parsed: usize = args[i + 1].parse::<usize>().unwrap_or_else(|_| {
+                    });
+                    let val_str = val.to_str().unwrap_or_else(|| {
+                        eprintln!("--buf принимает только UTF-8 значения");
+                        exit(1);
+                    });
+                    let parsed: usize = val_str.parse::<usize>().unwrap_or_else(|_| {
                         eprintln!("Некорректное значение для --buf");
                         exit(1);
                     });
@@ -85,17 +106,17 @@ impl Config {
                         exit(1);
                     }
                     buf_size = Some(parsed);
-                    i += 2;
                 }
-                s if s.starts_with("--") => {
+                Some("--quiet") => {
+                    quiet = true;
+                }
+                Some(s) if s.starts_with("--") => {
                     eprintln!("Неизвестный флаг: {s}");
                     exit(1);
                 }
-                // позиционные:
-                other => {
+                Some(other) => {
                     if device_path.is_none() {
                         device_path = Some(other.to_string());
-                        i += 1;
                     } else if passes.is_none() {
                         let p: usize = other.parse::<usize>().unwrap_or_else(|_| {
                             eprintln!("Число проходов должно быть положительным целым");
@@ -106,11 +127,14 @@ impl Config {
                             exit(1);
                         }
                         passes = Some(p);
-                        i += 1;
                     } else {
                         eprintln!("Лишний позиционный аргумент: {other}");
                         exit(1);
                     }
+                }
+                None => {
+                    eprintln!("Аргументы должны быть валидным UTF-8");
+                    exit(1);
                 }
             }
         }
@@ -127,13 +151,14 @@ impl Config {
             passes,
             buf_size,
             mode,
+            quiet,
         }
     }
 
     pub fn usage(prog: &str) -> String {
         format!(
 "Использование:
-  {prog} <устройство> [проходы] [--mode fast|durable|direct] [--buf BYTES]
+  {prog} <устройство> [проходы] [--mode fast|durable|direct] [--buf BYTES] [--quiet]
 
 Примеры:
   sudo {prog} /dev/sdX 8
@@ -146,7 +171,8 @@ impl Config {
   [проходы]        Количество проходов (последний — нулями). По умолчанию 8
   --mode           fast (быстро) | durable (максимум надёжности) | direct (Linux, O_DIRECT — без page cache)
   --buf BYTES      Размер буфера. Если не указан — выбирается автоматически
-                   по размеру блока устройства (кратно сектору, целимся ~64 KiB)"
+                   по размеру блока устройства (кратно сектору, целимся ~64 KiB)
+  --quiet          Не выводить строку прогресса (ускоряет работу)."
         )
     }
 }

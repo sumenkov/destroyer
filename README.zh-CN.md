@@ -60,6 +60,8 @@ source $HOME/.cargo/env
 ## 构建
 ```bash
 cargo build --release
+# 生产（nightly）构建：panic-abort std
+cargo +nightly build --release -Zbuild-std=std,panic_abort
 ```
 
 ## 运行
@@ -73,6 +75,7 @@ sudo target/release/destroyer <设备> [遍数] [--mode fast|durable] [--buf BYT
 - `--mode` —— `fast`（默认）或 `durable`（见下）。
 - `--buf BYTES` —— 写入缓冲区大小。未指定时将**自动选择**：
   基于设备块大小对齐到扇区，目标约 **64 KiB**（并限制在 **16 KiB..1 MiB** 范围）。
+- `--quiet` —— 关闭进度输出（控制台更安静，也能略微提升性能）。
 
 ## 模式
 - `fast` —— 速度优先。
@@ -144,3 +147,6 @@ MIT。以下为便利性翻译：
 - [LICENSE（英文）](./LICENSE)
 - [LICENSE.ru（俄文，非官方）](./LICENSE.ru)
 - [LICENSE.zh-CN（中文，非官方）](./LICENSE.zh-CN)
+- `cargo test --features test-support` —— 启用测试辅助功能的集成测试。
+- `cargo clippy --release -- -W clippy::perf` —— 提前发现性能问题。
+- `cargo bench --features test-support` —— 运行 Criterion 基准测试，比较不同缓冲区。

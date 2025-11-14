@@ -1,3 +1,5 @@
+#![cfg(feature = "test-support")]
+
 // tests/errors.rs
 #[path = "../src/dev.rs"]
 mod dev;
