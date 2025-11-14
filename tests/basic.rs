@@ -1,9 +1,7 @@
 #![cfg(feature = "test-support")]
-
 // tests/basic.rs
 // Интеграционные тесты: подключаем исходники напрямую через #[path],
 // чтобы не зависеть от имени крейта и не модифицировать существующие файлы.
-
 #![allow(clippy::redundant_clone)]
 #![allow(clippy::bool_assert_comparison)]
 

@@ -60,7 +60,11 @@ source $HOME/.cargo/env
 ## Сборка
 ```bash
 cargo build --release
-# Продакшен-сборка (nightly) с panic-abort std:
+```
+
+**Продакшен (nightly, panic-abort std)**
+```bash
+# Требуется: rustup component add rust-src --toolchain nightly-<трёхбуквенный_код>
 cargo +nightly build --release -Zbuild-std=std,panic_abort
 ```
 
@@ -72,14 +76,15 @@ sudo target/release/destroyer <устройство> [проходы] [--mode fa
 ### Параметры
 - `<устройство>` — путь к блочному устройству (Linux: `/dev/sdX`, `/dev/nvme0n1`; macOS: `/dev/diskN`).
 - `[проходы]` — количество проходов, по умолчанию **8** (последний — нулями).
-- `--mode` — `fast` (по умолчанию) или `durable` (см. ниже).
+- `--mode` — `fast` (по умолчанию) или `durable` (если включена фича `durable`, см. ниже).
 - `--buf BYTES` — размер буфера записи. Если не указан — выбирается **автоматически**
   по размеру блока устройства (кратно сектору; целимся ~64 KiB в диапазоне 16 KiB..1 MiB).
 - `--quiet` — не выводить прогресс (немного быстрее и тише в логах).
+- `--mode direct` — доступено только на Linux при включённой фиче `direct` (O_DIRECT).
 
 ## Режимы
 - `fast` — приоритет скорость.
-- `durable` — повышенная надёжность:
+- `durable` — повышенная надёжность (работает, если фича `durable` включена при сборке):
   - **Linux**: открываем с `O_SYNC` (каждый `write()` ждёт устойчивой записи).
   - **macOS**: отключаем кеш (`F_NOCACHE`) и делаем «жёсткий» flush `F_FULLFSYNC` в конце каждого прохода.
 
@@ -132,7 +137,7 @@ sudo dmsetup ls
 - Режим `durable` будет **заметно медленнее** (из-за барьеров/flush).
 - На macOS предпочтительнее узлы всего диска (`/dev/diskN`).
 
-## Диагностика
+## Архитектура
 - **`EBUSY` (занято):** устройство смонтировано или занято процессом — см. раздел о размонтировании.
 - **`Inappropriate ioctl for device` при синхронизации:** часть сырых устройств не поддерживает `fsync` — в коде есть безопасные обходы.
 - **Permission denied:** запускайте через `sudo`.
@@ -145,6 +150,20 @@ sudo dmsetup ls
 - `cargo test --features test-support` — интеграционные тесты (включают вспомогательные функции вне релизной сборки).
 - `cargo clippy --release -- -W clippy::perf` — поиск потенциальных деградаций до релиза.
 - `cargo bench --features test-support` — Criterion-бенчмарки буферов.
+
+## Вклад / разработка
+- `cargo test --features test-support` — интеграционные тесты (включают вспомогательные функции вне релизной сборки).
+- `cargo clippy --release -- -W clippy::perf` — поиск потенциальных деградаций до релиза.
+- `cargo bench --features test-support` — Criterion-бенчмарки буферов.
+- `cargo bloat --release -n 20` — контроль роста бинарника.
+- `cargo asm --release destroyer::wipe::pass_random` — просмотр критичного ассемблера.
+
+### Фичи
+| Фича           | По умолчанию | Назначение                               |
+|----------------|--------------|-------------------------------------------|
+| `durable`      | ✅            | Режим с барьерами O_SYNC/F_FULLFSYNC.     |
+| `direct`       | ✅            | Linux O_DIRECT + выровненные буферы.      |
+| `test-support` | ❌            | Вспомогательные утилиты для тестов/bench. |
 
 ## Лицензия
 MIT. Переводы для удобства:

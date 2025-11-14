@@ -58,9 +58,14 @@ source $HOME/.cargo/env
 ```
 
 ## Build
+**Standard release build**
 ```bash
 cargo build --release
-# Production (nightly) build with panic-abort std:
+```
+
+**Nightly build with panic-abort std**
+```bash
+# Requires: rustup component add rust-src --toolchain nightly-<triple>
 cargo +nightly build --release -Zbuild-std=std,panic_abort
 ```
 
@@ -72,14 +77,15 @@ sudo target/release/destroyer <device> [passes] [--mode fast|durable] [--buf BYT
 ### Parameters
 - `<device>` — path to the block device (Linux: `/dev/sdX`, `/dev/nvme0n1`; macOS: `/dev/diskN`).
 - `[passes]` — number of passes, default **8** (the last pass writes zeros).
-- `--mode` — `fast` (default) or `durable` (see below).
+- `--mode` — `fast` (default) or `durable` (see below; requires the `durable` feature).
 - `--buf BYTES` — write buffer size. If omitted, buffer size is **chosen automatically**
   based on the device block size (aligned to sector; ~64 KiB target within 16 KiB..1 MiB).
 - `--quiet` — suppress progress output (slightly faster, less console noise).
+- `--mode direct` — Linux-only (requires the `direct` feature); bypasses page cache via O_DIRECT.
 
 ## Modes
 - `fast` — speed oriented.
-- `durable` — higher durability:
+- `durable` — higher durability (available only when the `durable` feature is enabled):
   - **Linux**: open device with `O_SYNC` (each `write()` waits until data is stable on the device).
   - **macOS**: disable caching (`F_NOCACHE`) and perform a hard flush with `F_FULLFSYNC` at the end of each pass.
 
@@ -142,9 +148,19 @@ sudo dmsetup ls
 - Platform-specific runners reside in `src/platform/`. For Linux the entry point is `platform::linux::run`, for macOS — `platform::macos::run`; each can host OS-only setup, debugging flags, or extra safeguards before calling the shared `app::run`.
 - The binary `src/main.rs` selects the right runner at compile time via `#[cfg(target_os = "...")]`, so extending behaviour for one OS never affects the other unless you change shared modules explicitly.
 
-- `cargo test --features test-support` — run integration tests (includes temp-file helpers kept out of release builds).
-- `cargo clippy --release -- -W clippy::perf` — catch perf regressions before release.
-- `cargo bench --features test-support` — run Criterion benchmarks for different buffer sizes.
+## Development Workflow
+- **Tests:** `cargo test --features test-support` (helpers stay out of release artifacts).
+- **Clippy perf checks:** `cargo clippy --release -- -W clippy::perf`.
+- **Benchmarks:** `cargo bench --features test-support` (Criterion suite benchmarking buffer sizes/tail handling).
+- **Binary-size guard:** `cargo bloat --release -n 20`.
+- **Assembly inspection:** `cargo asm --release destroyer::wipe::pass_random`.
+
+### Feature flags
+| Feature        | Default | Purpose                                      |
+|----------------|---------|----------------------------------------------|
+| `durable`      | ✅      | Enables O_SYNC/F_FULLFSYNC durability mode.  |
+| `direct`       | ✅      | Enables Linux O_DIRECT mode and aligned I/O. |
+| `test-support` | ❌      | Pulls in temp-file helpers for tests/bench.  |
 
 ## License
 MIT License. Translations provided for convenience:

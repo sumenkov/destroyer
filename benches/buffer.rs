@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use destroyer::wipe::{Buffers, ProgressTracker, pass_zeros};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -16,12 +16,10 @@ fn bench_pass_zeros(c: &mut Criterion) {
                 b.iter(|| {
                     let tmp = TempFile::new(FILE_SIZE);
                     let path: PathBuf = tmp.path().to_path_buf();
-                    let mut f: File =
-                        File::options().read(true).write(true).open(&path).unwrap();
+                    let mut f: File = File::options().read(true).write(true).open(&path).unwrap();
 
                     let mut progress = ProgressTracker::new(1, FILE_SIZE, true);
-                    let mut buffers =
-                        Buffers::new(buf, false, 4096).expect("buffers");
+                    let mut buffers = Buffers::new(buf, false, 4096).expect("buffers");
                     pass_zeros(
                         &mut f,
                         FILE_SIZE,
@@ -78,8 +76,7 @@ impl Drop for TempFile {
 }
 
 fn unique_temp_path() -> PathBuf {
-    static COUNTER: std::sync::atomic::AtomicUsize =
-        std::sync::atomic::AtomicUsize::new(0);
+    static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let mut path = std::env::temp_dir();
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
