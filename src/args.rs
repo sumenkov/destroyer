@@ -19,7 +19,10 @@ impl Config {
     ///   destroyer <device> [passes] --mode fast|durable|direct [--buf BYTES]
     pub fn parse(mut args: Vec<String>) -> Self {
         if args.len() < 2 {
-            eprintln!("{}", Self::usage(&args.get(0).map(String::as_str).unwrap_or("destroyer")));
+            eprintln!(
+                "{}",
+                Self::usage(&args.get(0).map(String::as_str).unwrap_or("destroyer"))
+            );
             exit(1);
         }
 
@@ -48,15 +51,21 @@ impl Config {
                         "direct" => {
                             // На Linux разрешаем, на macOS выдадим понятную ошибку в main при попытке открыть.
                             #[cfg(target_os = "linux")]
-                            { SyncMode::Direct }
+                            {
+                                SyncMode::Direct
+                            }
                             #[cfg(not(target_os = "linux"))]
                             {
-                                eprintln!("Режим 'direct' поддерживается только на Linux (O_DIRECT).");
+                                eprintln!(
+                                    "Режим 'direct' поддерживается только на Linux (O_DIRECT)."
+                                );
                                 exit(1);
                             }
                         }
                         _ => {
-                            eprintln!("Неизвестное значение --mode: {val}. Ожидается fast|durable|direct");
+                            eprintln!(
+                                "Неизвестное значение --mode: {val}. Ожидается fast|durable|direct"
+                            );
                             exit(1);
                         }
                     };
@@ -67,12 +76,10 @@ impl Config {
                         eprintln!("--buf требует число байт");
                         exit(1);
                     }
-                    let parsed: usize = args[i + 1]
-                        .parse::<usize>()
-                        .unwrap_or_else(|_| {
-                            eprintln!("Некорректное значение для --buf");
-                            exit(1);
-                        });
+                    let parsed: usize = args[i + 1].parse::<usize>().unwrap_or_else(|_| {
+                        eprintln!("Некорректное значение для --buf");
+                        exit(1);
+                    });
                     if parsed == 0 {
                         eprintln!("--buf должен быть > 0");
                         exit(1);

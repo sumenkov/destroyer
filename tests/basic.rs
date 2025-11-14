@@ -1,4 +1,3 @@
-
 // tests/basic.rs
 // Интеграционные тесты: подключаем исходники напрямую через #[path],
 // чтобы не зависеть от имени крейта и не модифицировать существующие файлы.
@@ -13,11 +12,11 @@ mod dev;
 #[path = "../src/wipe.rs"]
 mod wipe;
 
+use crate::args::Config;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 use tempfile::NamedTempFile;
-use crate::args::Config;
 //
 // -------- tests for args::Config::parse --------
 //
@@ -67,7 +66,10 @@ fn parse_with_flags_ok() {
 
 #[test]
 fn choose_buffer_size_respects_min_max_and_alignment() {
-    let sizes = dev::BlockSizes { logical: 4096, physical: 4096 };
+    let sizes = dev::BlockSizes {
+        logical: 4096,
+        physical: 4096,
+    };
 
     // None -> 64 KiB, уже кратно сектору
     let b0: usize = dev::choose_buffer_size(sizes, None);
@@ -123,7 +125,19 @@ fn pass_zeros_writes_zeros() {
 
     let buf_size: usize = 32 * 1024;
     // direct=false, sector не используется; dev_path только для хвоста при direct=true
-    wipe::pass_zeros(&mut f, buf_size, 128 * 1024, false, false, 4096, path.to_str().unwrap()).expect("pass_zeros");
+    let mut progress = wipe::ProgressTracker::new(1, 128 * 1024);
+    progress.start_pass(1);
+    wipe::pass_zeros(
+        &mut f,
+        buf_size,
+        128 * 1024,
+        false,
+        false,
+        4096,
+        path.to_str().unwrap(),
+        &mut progress,
+    )
+    .expect("pass_zeros");
 
     // Проверим, что все байты — нули
     let mut data: Vec<u8> = Vec::new();
@@ -140,7 +154,19 @@ fn pass_random_writes_nonzero_somewhere() {
     let mut f: File = File::options().read(true).write(true).open(&path).unwrap();
 
     let buf_size: usize = 32 * 1024;
-    wipe::pass_random(&mut f, buf_size, 128 * 1024, false, false, 4096, path.to_str().unwrap()).expect("pass_random");
+    let mut progress = wipe::ProgressTracker::new(1, 128 * 1024);
+    progress.start_pass(1);
+    wipe::pass_random(
+        &mut f,
+        buf_size,
+        128 * 1024,
+        false,
+        false,
+        4096,
+        path.to_str().unwrap(),
+        &mut progress,
+    )
+    .expect("pass_random");
 
     let mut data = Vec::new();
     f.seek(SeekFrom::Start(0)).unwrap();

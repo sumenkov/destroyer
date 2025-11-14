@@ -37,16 +37,14 @@ fn cli_zero_passes_fails() {
 fn cli_invalid_mode_fails() {
     let mut cmd = bin();
     cmd.args(["/dev/null", "1", "--mode", "wat"]);
-    cmd.assert()
-        .failure();
+    cmd.assert().failure();
 }
 
 #[test]
 fn cli_negative_buf_fails() {
     let mut cmd = bin();
     cmd.args(["/dev/null", "1", "--buf", "-1"]);
-    cmd.assert()
-        .failure();
+    cmd.assert().failure();
 }
 
 //

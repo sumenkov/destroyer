@@ -1,8 +1,8 @@
+use libc::c_int;
+use std::ffi::CString;
 use std::fs::File;
 use std::io::{self, Seek, SeekFrom};
 use std::os::fd::{AsRawFd, FromRawFd};
-use std::ffi::CString;
-use libc::c_int;
 
 /// Режим синхронизации.
 #[allow(dead_code)]
@@ -20,13 +20,17 @@ pub enum SyncMode {
 pub fn open_device_writable(dev_path: &str, mode: SyncMode) -> io::Result<File> {
     #[cfg(target_os = "linux")]
     {
-        use libc::{open, O_WRONLY, O_SYNC, O_DIRECT};
+        use libc::{O_DIRECT, O_SYNC, O_WRONLY, open};
         let c: CString = CString::new(dev_path).unwrap();
         let mut flags: c_int = O_WRONLY;
         match mode {
             SyncMode::Fast => {}
-            SyncMode::Durable => { flags |= O_SYNC; }
-            SyncMode::Direct => { flags |= O_DIRECT; }
+            SyncMode::Durable => {
+                flags |= O_SYNC;
+            }
+            SyncMode::Direct => {
+                flags |= O_DIRECT;
+            }
         };
         let fd: c_int = unsafe { open(c.as_ptr(), flags, 0) };
         if fd < 0 {
@@ -39,7 +43,7 @@ pub fn open_device_writable(dev_path: &str, mode: SyncMode) -> io::Result<File> 
 
     #[cfg(target_os = "macos")]
     {
-        use libc::{fcntl, open, F_NOCACHE, O_WRONLY};
+        use libc::{F_NOCACHE, O_WRONLY, fcntl, open};
         let c: CString = CString::new(dev_path).unwrap();
         let fd: c_int = unsafe { open(c.as_ptr(), O_WRONLY, 0) };
         if fd < 0 {
@@ -48,7 +52,9 @@ pub fn open_device_writable(dev_path: &str, mode: SyncMode) -> io::Result<File> 
         let mut f: File = unsafe { File::from_raw_fd(fd) };
 
         // Не засоряем page cache (актуально для «сырых» устройств).
-        unsafe { let _ = fcntl(f.as_raw_fd(), F_NOCACHE, 1); }
+        unsafe {
+            let _ = fcntl(f.as_raw_fd(), F_NOCACHE, 1);
+        }
 
         // if let SyncMode::Direct = mode {
         //     // На macOS прямой O_DIRECT-эквивалент для блочных устройств отсутствует.
@@ -62,7 +68,10 @@ pub fn open_device_writable(dev_path: &str, mode: SyncMode) -> io::Result<File> 
 
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
-        Err(io::Error::new(io::ErrorKind::Other, "Поддерживаются только Linux и macOS"))
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            "Поддерживаются только Linux и macOS",
+        ))
     }
 }
 
@@ -71,7 +80,9 @@ pub fn safe_sync(file: &File) -> io::Result<()> {
     match file.sync_all() {
         Ok(()) => Ok(()),
         Err(e) => match e.raw_os_error() {
-            Some(code) if code == libc::ENOTTY || code == libc::ENOTSUP || code == libc::EINVAL => Ok(()),
+            Some(code) if code == libc::ENOTTY || code == libc::ENOTSUP || code == libc::EINVAL => {
+                Ok(())
+            }
             _ => Err(e),
         },
     }
@@ -88,14 +99,20 @@ pub fn full_sync(file: &File) -> io::Result<()> {
 
     #[cfg(target_os = "macos")]
     {
-        use libc::{fcntl, F_FULLFSYNC};
+        use libc::{F_FULLFSYNC, fcntl};
         let rc: c_int = unsafe { fcntl(file.as_raw_fd(), F_FULLFSYNC) };
         if rc == -1 {
             // fallback + мягкая обработка неподдерживаемых ошибок
             match file.sync_all() {
                 Ok(()) => Ok(()),
                 Err(e) => match e.raw_os_error() {
-                    Some(code) if code == libc::ENOTTY || code == libc::ENOTSUP || code == libc::EINVAL => Ok(()),
+                    Some(code)
+                        if code == libc::ENOTTY
+                            || code == libc::ENOTSUP
+                            || code == libc::EINVAL =>
+                    {
+                        Ok(())
+                    }
                     _ => Err(e),
                 },
             }
@@ -106,7 +123,10 @@ pub fn full_sync(file: &File) -> io::Result<()> {
 
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
-        Err(io::Error::new(io::ErrorKind::Other, "Поддерживаются только Linux и macOS"))
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            "Поддерживаются только Linux и macOS",
+        ))
     }
 }
 
@@ -117,9 +137,13 @@ pub fn alloc_aligned(len: usize, align: usize) -> io::Result<Box<[u8]>> {
     assert!(align.is_power_of_two(), "align должен быть степенью двойки");
     let mut ptr: *mut libc::c_void = std::ptr::null_mut();
     let rc: c_int = unsafe { posix_memalign(&mut ptr, align, len) };
-    if rc != 0 { return Err(io::Error::from_raw_os_error(rc)); }
+    if rc != 0 {
+        return Err(io::Error::from_raw_os_error(rc));
+    }
     // Инициализируем нулями, выше по стеку можно заполнить случайными данными.
-    unsafe { std::ptr::write_bytes(ptr, 0, len); }
+    unsafe {
+        std::ptr::write_bytes(ptr, 0, len);
+    }
     let slice: &mut [u8] = unsafe { std::slice::from_raw_parts_mut(ptr as *mut u8, len) };
     Ok(unsafe { Box::from_raw(slice) })
 }
@@ -174,10 +198,10 @@ pub fn get_block_sizes(dev_path: &str) -> io::Result<BlockSizes> {
 
 #[cfg(target_os = "macos")]
 pub fn get_block_sizes(dev_path: &str) -> io::Result<BlockSizes> {
-    use std::fs::File;
     use libc::{c_ulong, ioctl};
+    use std::fs::File;
 
-    const DKIOCGETBLOCKSIZE: c_ulong  = 0x4004_6418; // _IOR('d', 24, u32)
+    const DKIOCGETBLOCKSIZE: c_ulong = 0x4004_6418; // _IOR('d', 24, u32)
 
     let f: File = File::open(dev_path)?;
     let fd = f.as_raw_fd();
@@ -186,12 +210,18 @@ pub fn get_block_sizes(dev_path: &str) -> io::Result<BlockSizes> {
     if rc < 0 || block_size == 0 {
         return Err(io::Error::last_os_error());
     }
-    Ok(BlockSizes { logical: block_size, physical: block_size })
+    Ok(BlockSizes {
+        logical: block_size,
+        physical: block_size,
+    })
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub fn get_block_sizes(_dev_path: &str) -> io::Result<BlockSizes> {
-    Err(io::Error::new(io::ErrorKind::Other, "Поддерживаются только Linux и macOS"))
+    Err(io::Error::new(
+        io::ErrorKind::Other,
+        "Поддерживаются только Linux и macOS",
+    ))
 }
 
 /// Подбор размера буфера с учётом блоков.
@@ -204,22 +234,27 @@ pub fn choose_buffer_size(sizes: BlockSizes, requested: Option<usize>) -> usize 
 
     let min_b: usize = 16 * 1024;
     let max_b: usize = 1024 * 1024;
-    if target < min_b { target = min_b; }
-    if target > max_b { target = max_b; }
+    if target < min_b {
+        target = min_b;
+    }
+    if target > max_b {
+        target = max_b;
+    }
 
     let rem: usize = target % sector;
-    if rem != 0 { target += sector - rem; }
+    if rem != 0 {
+        target += sector - rem;
+    }
     target
 }
-
 
 /// Получить размер блочного устройства в байтах (ioctl).
 #[cfg(target_os = "linux")]
 pub fn get_device_size_bytes(dev_path: &str) -> std::io::Result<u64> {
+    use libc::{c_ulong, ioctl};
     use std::fs::File;
     use std::io;
     use std::path::Path;
-    use libc::{ioctl, c_ulong};
 
     // BLKGETSIZE64 = _IOR(0x12, 114, size_t) -> 0x80081272 на Linux
     const BLKGETSIZE64: c_ulong = 0x8008_1272;
@@ -253,11 +288,11 @@ pub fn get_device_size_bytes(dev_path: &str) -> std::io::Result<u64> {
 
 #[cfg(target_os = "macos")]
 pub fn get_device_size_bytes(dev_path: &str) -> io::Result<u64> {
-    use std::fs::File;
     use libc::{c_ulong, ioctl};
+    use std::fs::File;
 
     // Darwin ioctl-константы (_IOR('d', N, T))
-    const DKIOCGETBLOCKSIZE: c_ulong  = 0x4004_6418; // _IOR('d', 24, u32)
+    const DKIOCGETBLOCKSIZE: c_ulong = 0x4004_6418; // _IOR('d', 24, u32)
     const DKIOCGETBLOCKCOUNT: c_ulong = 0x4008_6419; // _IOR('d', 25, u64)
 
     let f: File = File::open(dev_path)?;
@@ -279,5 +314,8 @@ pub fn get_device_size_bytes(dev_path: &str) -> io::Result<u64> {
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub fn get_device_size_bytes(_dev_path: &str) -> io::Result<u64> {
-    Err(io::Error::new(io::ErrorKind::Other, "Поддерживаются только Linux и macOS"))
+    Err(io::Error::new(
+        io::ErrorKind::Other,
+        "Поддерживаются только Linux и macOS",
+    ))
 }
