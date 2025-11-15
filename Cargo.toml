@@ -1,6 +1,6 @@
 [package]
 name = "destroyer"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 license = "MIT"
 description = "Secure multi-pass disk wiper (Linux/macOS). USE WITH EXTREME CAUTION."
@@ -15,7 +15,7 @@ direct = []
 test-support = []
 
 [dev-dependencies]
-criterion = { version = "0.5", default-features = false }
+criterion = { version = "0.7", default-features = false }
 
 [lib]
 name = "destroyer"
