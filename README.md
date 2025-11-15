@@ -1,121 +1,121 @@
 # destroyer (Rust)
 
-> ⚠️ **DANGER**: This utility irreversibly overwrites the specified block device. Double‑check your `/dev/...` path and make sure the device is **unmounted** before running.  
-> **Supported OS:** Linux and macOS only.
+> ⚠️ **ОПАСНО**: Утилита безвозвратно перезаписывает указанный блок‑девайс. Проверьте путь `/dev/...` и убедитесь, что устройство **размонтировано**.  
+> **Поддерживаемые ОС:** только Linux и macOS.
 
-[Русский](./README.ru.md) · [中文](./README.zh-CN.md)
+[English](README.en.md) · [中文](./README.zh-CN.md)
 
 ---
 
-## Table of Contents
-- [What is it?](#what-is-it)
-- [Safety First](#safety-first)
-- [Supported Platforms](#supported-platforms)
-- [Install Rust & Cargo](#install-rust--cargo)
-- [Build](#build)
-- [Usage](#usage)
-- [Modes](#modes)
-- [Direct I/O (Linux O_DIRECT)](#direct-io-linux-o_direct)
-- [Examples](#examples)
-- [Un-mounting / Freeing a Device](#un-mounting--freeing-a-device)
-- [Tuning & Performance](#tuning--performance)
-- [Troubleshooting](#troubleshooting)
-- [Architecture](#architecture)
-- [Development Workflow](#development-workflow)
-- [License](#license)
+## Содержание
+- [Что это](#что-это)
+- [Важные предупреждения](#важные-предупреждения)
+- [Поддерживаемые платформы](#поддерживаемые-платформы)
+- [Установка Rust и Cargo](#установка-rust-и-cargo)
+- [Сборка](#сборка)
+- [Запуск](#запуск)
+- [Режимы](#режимы)
+- [Прямой ввод-вывод (Linux O_DIRECT)](#прямой-ввод-вывод-linux-o_direct)
+- [Примеры](#примеры)
+- [Размонтирование / освобождение устройства](#размонтирование--освобождение-устройства)
+- [Тюнинг и производительность](#тюнинг-и-производительность)
+- [Диагностика](#диагностика)
+- [Архитектура](#архитектура)
+- [Разработка](#разработка)
+- [Фичи](#фичи)
+- [Лицензия](#лицензия)
 
-## What is it?
-`destroyer` is a secure multi-pass disk wiper for **block devices**. It writes cryptographically secure random data from `/dev/urandom` for several passes and finishes with a pass of zeros.
+## Что это
+`destroyer` — безопасная утилита для многопроходного стирания **блочных устройств**. Несколько проходов случайными данными из `/dev/urandom`, затем финальный проход нулями.
 
-- New random buffer is generated **for each pass**.
-- Final pass writes **zeros**.
-- Linux/macOS support with proper device-size detection.
+- На **каждом проходе** генерируется новый случайный буфер.
+- Финальный проход — **нули**.
+- Корректное определение размера устройства на Linux/macOS.
 
-## Safety First
-- Running this on the wrong device will **destroy data permanently**.
-- Always unmount the device first.
-- Prefer running on the **whole device** (e.g., `/dev/sdX`, `/dev/nvme0n1`, `/dev/diskN`), not a mounted partition.
-- Requires root privileges (`sudo`).
+## Важные предупреждения
+- Запуск по неверному устройству **навсегда уничтожит** данные.
+- Всегда сначала размонтируйте устройство.
+- Предпочтительно работать по **всему диску** (`/dev/sdX`, `/dev/nvme0n1`, `/dev/diskN`), а не по смонтированному разделу.
+- Нужны права суперпользователя (`sudo`).
 
-## Supported Platforms
-- **Linux**: supported.
-- **macOS**: supported.
-- **Windows / others**: not supported.
+## Поддерживаемые платформы
+- **Linux** — поддерживается.
+- **macOS** — поддерживается.
+- **Windows / прочие** — не поддерживаются.
 
-## Install Rust & Cargo
-**Recommended (rustup):**
+## Установка Rust и Cargo
+**Рекомендуется (rustup):**
 ```bash
 # Linux / macOS:
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-# then reload shell or:
+# затем перезагрузите shell или:
 source $HOME/.cargo/env
 rustc --version && cargo --version
 ```
 
-**macOS via Homebrew (optional):**
+**macOS через Homebrew (опционально):**
 ```bash
 brew install rustup-init
 rustup-init -y
 source $HOME/.cargo/env
 ```
 
-## Build
-**Standard release build**
+## Сборка
 ```bash
 cargo build --release
 ```
 
-**Nightly build with panic-abort std**
+**Продакшен (nightly, panic-abort std)**
 ```bash
-# Requires: rustup component add rust-src --toolchain nightly-<triple>
+# Требуется: rustup component add rust-src --toolchain nightly-<трёхбуквенный_код>
 cargo +nightly build --release -Zbuild-std=std,panic_abort
 ```
 
-## Usage
+## Запуск
 ```bash
-sudo target/release/destroyer <device> [passes] [--mode fast|durable] [--buf BYTES]
+sudo target/release/destroyer <устройство> [проходы] [--mode fast|durable] [--buf BYTES]
 ```
 
-### Parameters
-- `<device>` — path to the block device (Linux: `/dev/sdX`, `/dev/nvme0n1`; macOS: `/dev/diskN`).
-- `[passes]` — number of passes, default **8** (the last pass writes zeros).
-- `--mode` — `fast` (default) or `durable` (see below; requires the `durable` feature).
-- `--buf BYTES` — write buffer size. If omitted, buffer size is **chosen automatically**
-  based on the device block size (aligned to sector; ~64 KiB target within 16 KiB..1 MiB).
-- `--quiet` — suppress progress output (slightly faster, less console noise).
-- `--mode direct` — Linux-only (requires the `direct` feature); bypasses page cache via O_DIRECT.
+### Параметры
+- `<устройство>` — путь к блочному устройству (Linux: `/dev/sdX`, `/dev/nvme0n1`; macOS: `/dev/diskN`).
+- `[проходы]` — количество проходов, по умолчанию **8** (последний — нулями).
+- `--mode` — `fast` (по умолчанию) или `durable` (если включена фича `durable`, см. ниже).
+- `--buf BYTES` — размер буфера записи. Если не указан — выбирается **автоматически**
+  по размеру блока устройства (кратно сектору; целимся ~64 KiB в диапазоне 16 KiB..1 MiB).
+- `--quiet` — не выводить прогресс (немного быстрее и тише в логах).
+- `--mode direct` — доступено только на Linux при включённой фиче `direct` (O_DIRECT).
 
-## Modes
-- `fast` — speed oriented.
-- `durable` — higher durability (available only when the `durable` feature is enabled):
-  - **Linux**: open device with `O_SYNC` (each `write()` waits until data is stable on the device).
-  - **macOS**: disable caching (`F_NOCACHE`) and perform a hard flush with `F_FULLFSYNC` at the end of each pass.
+## Режимы
+- `fast` — приоритет скорость.
+- `durable` — повышенная надёжность (работает, если фича `durable` включена при сборке):
+  - **Linux**: открываем с `O_SYNC` (каждый `write()` ждёт устойчивой записи).
+  - **macOS**: отключаем кеш (`F_NOCACHE`) и делаем «жёсткий» flush `F_FULLFSYNC` в конце каждого прохода.
 
-## Direct I/O (Linux O_DIRECT)
-`--mode direct` uses Linux **O_DIRECT** to bypass the page cache. This avoids polluting the system cache during large sequential writes.
+## Прямой ввод-вывод (Linux O_DIRECT)
+`--mode direct` использует Linux **O_DIRECT** и обходит page cache — так мы не «засоряем» кэш при длинной последовательной записи.
 
-Constraints:
-- Buffer **address** and **length** must be aligned to the device sector (commonly 4096B).
-- Write **offsets** must be sector-aligned as well.
-- The tool handles alignment and will write any non-aligned **tail** using a secondary non-O_DIRECT handle, so the whole device is still overwritten.
-- On **macOS**, `--mode direct` is **not available** and will error with a clear message.
+Ограничения:
+- Адрес и длина **буфера** должны быть выровнены по сектору (обычно 4096 байт).
+- Смещения записей должны быть кратны сектору.
+- Если остаётся «хвост», не кратный сектору, он дописывается вторым дескриптором **без** O_DIRECT — устройство всё равно перезаписывается полностью.
+- На **macOS** режим `--mode direct` **недоступен** — будет понятная ошибка.
 
-Tip: Use `--buf` only if you need a specific size. Otherwise the tool auto-selects a multiple of the sector (~64 KiB target).
+Совет: не указывайте `--buf`, если в этом нет нужды — утилита сама подберёт кратный сектору размер (~64 КиБ).
 
-## Auto buffer selection
-On Linux we read `/sys/class/block/<dev>/queue/{logical_block_size,physical_block_size}`.
-On macOS we query `DKIOCGETBLOCKSIZE`. The buffer is then selected to be a multiple of
-`max(logical, physical)` with a target around **64 KiB** (clamped to **16 KiB..1 MiB**).
-If you pass `--buf`, your value is normalized to sector alignment and clamped to the same range.
+## Автовыбор буфера
+На Linux читаем `/sys/class/block/<dev>/queue/{logical_block_size,physical_block_size}`.
+На macOS используем `DKIOCGETBLOCKSIZE`. Буфер выбирается кратным
+`max(logical, physical)` с целевым значением **~64 KiB** (ограничения **16 KiB..1 MiB**).
+Если задан `--buf`, значение нормализуется до кратности сектору и также ограничивается диапазоном.
 
-## Examples
+## Примеры
 ```bash
 sudo target/release/destroyer /dev/sdX
 sudo target/release/destroyer /dev/sdX 5 --mode durable --buf 65536
 sudo target/release/destroyer /dev/diskN 3 --mode fast
 ```
 
-## Un-mounting / Freeing a Device
+## Размонтирование / освобождение устройства
 **macOS**
 ```bash
 diskutil unmountDisk /dev/diskN
@@ -123,49 +123,49 @@ diskutil unmountDisk /dev/diskN
 
 **Linux**
 ```bash
-sudo umount <mountpoint_or_/dev/...>
-# Find attachments:
+sudo umount <точка_монтирования_или_/dev/...>
+# Найти привязки:
 lsblk -f | grep $(basename /dev/sdX)
-# Who holds it:
+# Кто держит:
 sudo lsof /dev/sdX | head
 sudo fuser -mv /dev/sdX
-# If swap:
+# Если это swap:
 sudo swapoff -a
 # LVM / dm-crypt:
 sudo dmsetup ls
 ```
 
-## Tuning & Performance
-- Increase `--buf` to 64KiB or 1MiB if the device benefits from larger sequential writes.
-- `durable` mode will be **slower** by design (more barriers/flushes).
-- On macOS, prefer whole-disk nodes (e.g., `/dev/diskN`).
+## Тюнинг и производительность
+- Увеличьте `--buf` до 64KiB или 1MiB, если носитель лучше пишет крупными блоками.
+- Режим `durable` будет **заметно медленнее** (из-за барьеров/flush).
+- На macOS предпочтительнее узлы всего диска (`/dev/diskN`).
 
-## Troubleshooting
-- **`EBUSY` (Device or resource busy):** the device is mounted or held by a process. See the unmounting section above.
-- **`Inappropriate ioctl for device (os error 25)` on sync:** some raw devices don’t support `fsync`. The tool uses safe fallbacks.
-- **Permission denied:** run with `sudo`.
+## Диагностика
+- **`EBUSY` (занято):** устройство смонтировано или занято процессом — см. раздел о размонтировании.
+- **`Inappropriate ioctl for device` при синхронизации:** часть сырых устройств не поддерживает `fsync` — в коде есть безопасные обходы.
+- **Permission denied:** запускайте через `sudo`.
 
-## Architecture
-- Core logic (argument parsing, device helpers, wiping routines) lives in the `destroyer` library crate (`src/args.rs`, `src/dev.rs`, `src/wipe.rs`, `src/app.rs`).
-- Platform-specific runners reside in `src/platform/`. For Linux the entry point is `platform::linux::run`, for macOS — `platform::macos::run`; each can host OS-only setup, debugging flags, or extra safeguards before calling the shared `app::run`.
-- The binary `src/main.rs` selects the right runner at compile time via `#[cfg(target_os = "...")]`, so extending behaviour for one OS never affects the other unless you change shared modules explicitly.
+## Архитектура
+- Базовая логика (парсинг аргументов, помощники блочных устройств, проходы перезаписи) вынесена в библиотечный крейт `destroyer` (`src/args.rs`, `src/dev.rs`, `src/wipe.rs`, `src/app.rs`).
+- Платформенные раннеры находятся в `src/platform/`: для Linux используется `platform::linux::run`, для macOS — `platform::macos::run`. Здесь удобно добавлять специфичные флаги/отладку перед вызовом общего `app::run`.
+- Бинарь `src/main.rs` выбирает нужный раннер с помощью `#[cfg(target_os = "...")]`, поэтому изменение поведения для одной ОС не затрагивает другую, пока вы не правите общие модули.
 
-## Development Workflow
-- **Tests:** `cargo test --features test-support` (helpers stay out of release artifacts).
-- **Clippy perf checks:** `cargo clippy --release -- -W clippy::perf`.
-- **Benchmarks:** `cargo bench --features test-support` (Criterion suite benchmarking buffer sizes/tail handling).
-- **Binary-size guard:** `cargo bloat --release -n 20`.
-- **Assembly inspection:** `cargo asm --release destroyer::wipe::pass_random`.
+## Разработка
+- `cargo test --features test-support` — интеграционные тесты (включают вспомогательные функции вне релизной сборки).
+- `cargo clippy --release -- -W clippy::perf` — поиск потенциальных деградаций до релиза.
+- `cargo bench --features test-support` — Criterion-бенчмарки буферов.
+- `cargo bloat --release -n 20` — контроль роста бинарника.
+- `cargo asm --release destroyer::wipe::pass_random` — просмотр критичного ассемблера.
 
-### Feature flags
-| Feature        | Default | Purpose                                      |
-|----------------|---------|----------------------------------------------|
-| `durable`      | ✅      | Enables O_SYNC/F_FULLFSYNC durability mode.  |
-| `direct`       | ✅      | Enables Linux O_DIRECT mode and aligned I/O. |
-| `test-support` | ❌      | Pulls in temp-file helpers for tests/bench.  |
+## Фичи
+| Фича           | По умолчанию | Назначение                               |
+|----------------|--------------|-------------------------------------------|
+| `durable`      | ✅            | Режим с барьерами O_SYNC/F_FULLFSYNC.     |
+| `direct`       | ✅            | Linux O_DIRECT + выровненные буферы.      |
+| `test-support` | ❌            | Вспомогательные утилиты для тестов/bench. |
 
-## License
-MIT License. Translations provided for convenience:
-- [LICENSE (English)](./LICENSE)
-- [LICENSE.ru (Russian, unofficial)](./LICENSE.ru)
-- [LICENSE.zh-CN (Chinese Simplified, unofficial)](./LICENSE.zh-CN)
+## Лицензия
+MIT. Переводы для удобства:
+- [LICENSE (англ.)](./LICENSE)
+- [LICENSE.ru (рус., неофиц.)](./LICENSE.ru)
+- [LICENSE.zh-CN (кит., неофиц.)](./LICENSE.zh-CN)

@@ -3,7 +3,7 @@
 > ⚠️ **危险**：该工具会**不可逆**地覆盖指定块设备。请仔细确认 `/dev/...` 路径并确保设备已**卸载**。  
 > **支持平台：** 仅 Linux 与 macOS。
 
-[English](./README.md) · [Русский](./README.ru.md)
+[English](README.en.md) · [Русский](README.md)
 
 ---
 
