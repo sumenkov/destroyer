@@ -41,7 +41,7 @@ fn bench_pass_zeros(c: &mut Criterion) {
                         }
                         checksum += chunk[..n].iter().map(|&b| b as u64).sum::<u64>();
                     }
-                    criterion::black_box(checksum);
+                    std::hint::black_box(checksum);
                 });
             },
         );
