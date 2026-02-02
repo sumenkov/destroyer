@@ -61,6 +61,15 @@ rustup-init -y
 source $HOME/.cargo/env
 ```
 
+**Windows（PowerShell）：**
+```powershell
+# 1) 从 https://rustup.rs 下载 rustup-init.exe 并运行：
+.\rustup-init.exe
+# 2) 重新打开终端并验证：
+rustc --version
+cargo --version
+```
+
 ## 构建
 **标准发布版**
 ```bash

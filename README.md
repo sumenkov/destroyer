@@ -61,6 +61,15 @@ rustup-init -y
 source $HOME/.cargo/env
 ```
 
+**Windows (PowerShell):**
+```powershell
+# 1) Скачайте rustup-init.exe с https://rustup.rs и запустите:
+.\rustup-init.exe
+# 2) Перезапустите терминал и проверьте:
+rustc --version
+cargo --version
+```
+
 ## Сборка
 ```bash
 cargo build --release
