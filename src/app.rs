@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 pub enum Platform {
     Linux,
     MacOs,
+    Windows,
 }
 
 impl Platform {
@@ -21,6 +22,7 @@ impl Platform {
         match self {
             Platform::Linux => "Linux",
             Platform::MacOs => "macOS",
+            Platform::Windows => "Windows",
         }
     }
 }
@@ -38,10 +40,8 @@ fn execute(cfg: Config, platform: Platform) {
     let device_size: u64 = match get_device_size_bytes(&cfg.device_path) {
         Ok(s) => s,
         Err(e) => {
-            if let Some(code) = e.raw_os_error() {
-                if code == libc::EBUSY {
-                    busy_help(&cfg.device_path);
-                }
+            if is_device_busy(&e) {
+                busy_help(&cfg.device_path);
             }
             eprintln!("Ошибка определения размера устройства: {e}");
             std::process::exit(1);
@@ -191,10 +191,8 @@ fn open_device(cfg: &Config, mode: SyncMode) -> File {
     match open_device_writable(&cfg.device_path, mode) {
         Ok(file) => file,
         Err(e) => {
-            if let Some(code) = e.raw_os_error() {
-                if code == libc::EBUSY {
-                    busy_help(&cfg.device_path);
-                }
+            if is_device_busy(&e) {
+                busy_help(&cfg.device_path);
             }
             eprintln!("Ошибка открытия устройства: {e}");
             std::process::exit(1);
@@ -202,16 +200,40 @@ fn open_device(cfg: &Config, mode: SyncMode) -> File {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
+fn is_device_busy(err: &std::io::Error) -> bool {
+    matches!(err.raw_os_error(), Some(code) if code == libc::EBUSY)
+}
+
+#[cfg(target_os = "windows")]
+fn is_device_busy(err: &std::io::Error) -> bool {
+    matches!(
+        err.raw_os_error(),
+        Some(5) | Some(32) | Some(33)
+    )
+}
+
 fn busy_help(device_path: &str) {
     eprintln!(
         "Устройство {} занято (возможно, примонтировано).",
         device_path
     );
-    eprintln!("macOS:  diskutil unmountDisk {}", device_path);
-    eprintln!("Linux:  sudo umount <точка_монтирования_или_/dev/..>");
-    eprintln!("        lsblk -f | grep $(basename {})", device_path);
-    eprintln!("        sudo lsof {}  | head", device_path);
-    eprintln!("        sudo fuser -mv {}", device_path);
-    eprintln!("        sudo swapoff -a");
-    eprintln!("        sudo dmsetup ls");
+    #[cfg(target_os = "macos")]
+    {
+        eprintln!("macOS:  diskutil unmountDisk {}", device_path);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        eprintln!("Linux:  sudo umount <точка_монтирования_или_/dev/..>");
+        eprintln!("        lsblk -f | grep $(basename {})", device_path);
+        eprintln!("        sudo lsof {}  | head", device_path);
+        eprintln!("        sudo fuser -mv {}", device_path);
+        eprintln!("        sudo swapoff -a");
+        eprintln!("        sudo dmsetup ls");
+    }
+    #[cfg(target_os = "windows")]
+    {
+        eprintln!("Windows:  diskpart -> list disk -> select disk N -> offline disk");
+        eprintln!("          затем убедитесь, что тома не смонтированы");
+    }
 }

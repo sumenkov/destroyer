@@ -1,4 +1,4 @@
-use crate::dev::{SyncMode, alloc_aligned, full_sync, open_device_writable, safe_sync};
+use crate::dev::{AlignedBuf, SyncMode, alloc_aligned, full_sync, open_device_writable, safe_sync};
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::time::{Duration, Instant};
@@ -171,7 +171,8 @@ fn push_two_digits(buf: &mut Vec<u8>, value: u8) {
     buf.push(b'0' + ones);
 }
 
-/// Заполнить буфер криптографически стойкими случайными байтами из `/dev/urandom`.
+/// Заполнить буфер криптографически стойкими случайными байтами.
+#[cfg(not(target_os = "windows"))]
 pub fn fill_secure_random(buf: &mut [u8]) -> io::Result<()> {
     let mut urnd: File = std::fs::File::open("/dev/urandom")?;
     let mut filled: usize = 0;
@@ -185,20 +186,56 @@ pub fn fill_secure_random(buf: &mut [u8]) -> io::Result<()> {
     Ok(())
 }
 
+/// Заполнить буфер криптографически стойкими случайными байтами (Windows).
+#[cfg(target_os = "windows")]
+pub fn fill_secure_random(buf: &mut [u8]) -> io::Result<()> {
+    use std::ffi::c_void;
+    use std::ptr::null_mut;
+
+    const BCRYPT_USE_SYSTEM_PREFERRED_RNG: u32 = 0x0000_0002;
+
+    #[link(name = "bcrypt")]
+    extern "system" {
+        fn BCryptGenRandom(
+            h_algorithm: *mut c_void,
+            pb_buffer: *mut u8,
+            cb_buffer: u32,
+            dw_flags: u32,
+        ) -> i32;
+    }
+
+    if buf.is_empty() {
+        return Ok(());
+    }
+
+    let status: i32 = unsafe {
+        BCryptGenRandom(
+            null_mut(),
+            buf.as_mut_ptr(),
+            buf.len() as u32,
+            BCRYPT_USE_SYSTEM_PREFERRED_RNG,
+        )
+    };
+    if status != 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("BCryptGenRandom failed: 0x{:08x}", status as u32),
+        ));
+    }
+    Ok(())
+}
+
 /// Набор буферов, переиспользуемых между проходами, включая хвост для O_DIRECT.
 pub struct Buffers {
-    main: Box<[u8]>,
+    main: AlignedBuf,
     tail: Vec<u8>,
     use_direct: bool,
 }
 
 impl Buffers {
     pub fn new(buf_size: usize, use_direct: bool, sector: usize) -> io::Result<Self> {
-        let main = if use_direct {
-            alloc_aligned(buf_size, sector)?
-        } else {
-            vec![0u8; buf_size].into_boxed_slice()
-        };
+        let align: usize = if use_direct { sector } else { 1 };
+        let main: AlignedBuf = alloc_aligned(buf_size, align)?;
         let tail_capacity = if use_direct { sector.max(1) } else { 0 };
         Ok(Self {
             main,
@@ -208,7 +245,7 @@ impl Buffers {
     }
 
     pub fn main_mut(&mut self) -> &mut [u8] {
-        &mut self.main
+        self.main.as_mut_slice()
     }
 
     pub fn tail_buf(&mut self, len: usize) -> &mut [u8] {

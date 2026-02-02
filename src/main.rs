@@ -8,8 +8,13 @@ fn main() {
     destroyer::platform::macos::run();
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(target_os = "windows")]
 fn main() {
-    eprintln!("destroyer поддерживает только Linux и macOS.");
+    destroyer::platform::windows::run();
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+fn main() {
+    eprintln!("destroyer поддерживает только Linux, macOS и Windows.");
     std::process::exit(1);
 }

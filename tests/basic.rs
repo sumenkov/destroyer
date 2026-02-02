@@ -95,10 +95,10 @@ fn choose_buffer_size_respects_min_max_and_alignment() {
 fn alloc_aligned_returns_aligned_buffer() {
     let align: usize = 4096usize;
     let len: usize = 8192usize;
-    let buf: Box<[u8]> = dev::alloc_aligned(len, align).expect("alloc_aligned failed");
+    let buf = dev::alloc_aligned(len, align).expect("alloc_aligned failed");
     assert_eq!(buf.len(), len);
 
-    // Проверим, что указатель выровнен по align (на Linux используется posix_memalign)
+    // Проверим, что указатель выровнен по align
     #[cfg(target_os = "linux")]
     {
         let ptr: usize = buf.as_ptr() as usize;
