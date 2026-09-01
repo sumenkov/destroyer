@@ -136,8 +136,8 @@ mod win {
         pub length: i64,
     }
 
-    #[link(name = "Kernel32")]
-    extern "system" {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
         pub fn CreateFileW(
             lp_file_name: *const u16,
             desired_access: u32,

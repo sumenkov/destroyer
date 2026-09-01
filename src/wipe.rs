@@ -195,7 +195,7 @@ pub fn fill_secure_random(buf: &mut [u8]) -> io::Result<()> {
     const BCRYPT_USE_SYSTEM_PREFERRED_RNG: u32 = 0x0000_0002;
 
     #[link(name = "bcrypt")]
-    extern "system" {
+    unsafe extern "system" {
         fn BCryptGenRandom(
             h_algorithm: *mut c_void,
             pb_buffer: *mut u8,
