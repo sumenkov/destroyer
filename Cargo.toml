@@ -7,12 +7,19 @@ description = "Secure multi-pass disk wiper (Linux/macOS). USE WITH EXTREME CAUT
 
 [dependencies]
 libc = "0.2"
+# Только для GUI (feature = "gui"). Чистый Rust, без системных зависимостей
+# вроде GTK — только X11/Wayland dev-заголовки, которые обычно уже стоят
+# на десктопных дистрибутивах Linux.
+eframe = { version = "0.29", optional = true }
 
 [features]
 default = ["durable", "direct"]
 durable = []
 direct = []
 test-support = []
+# GUI пока только для Linux (см. src/bin/destroyer_gui.rs — на других ОС
+# бинарник печатает сообщение и завершается с ошибкой).
+gui = ["dep:eframe"]
 
 [dev-dependencies]
 criterion = { version = "0.7", default-features = false }
@@ -24,6 +31,11 @@ path = "src/lib.rs"
 [[bin]]
 name = "destroyer"
 path = "src/main.rs"
+
+[[bin]]
+name = "destroyer-gui"
+path = "src/bin/destroyer_gui.rs"
+required-features = ["gui"]
 
 [profile.release]
 lto = "thin"

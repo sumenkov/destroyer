@@ -29,6 +29,7 @@ fn bench_pass_zeros(c: &mut Criterion) {
                         &mut progress,
                         &mut buffers,
                         None,
+                        None,
                     )
                     .unwrap();
 
