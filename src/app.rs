@@ -118,6 +118,7 @@ fn execute(cfg: Config, platform: Platform) {
             &mut progress,
             &mut buffers,
             tail_ref,
+            None,
         ) {
             eprintln!("\nОшибка записи случайных данных: {e}");
             std::process::exit(1);
@@ -150,6 +151,7 @@ fn execute(cfg: Config, platform: Platform) {
         &mut progress,
         &mut buffers,
         tail_ref,
+        None,
     ) {
         eprintln!("Ошибка записи нулей: {e}");
         std::process::exit(1);

@@ -177,6 +177,27 @@ exit
 - **Permission denied**：使用 `sudo` 或 Windows 管理员运行。
 - **Windows `Access denied` / `Sharing violation`**：磁盘未 offline 或权限不足。
 
+## GUI (目前仅限 Linux)
+对于那些更喜欢点击鼠标而不是输入参数的人，有一个使用 egui/eframe
+构建的桌面 GUI（纯 Rust，无 GTK 依赖 —— 只需要大多数 Linux 桌面已经具备的常规 X11/Wayland 开发头文件）。
+
+**Build & run:**
+```bash
+cargo build --release --features gui --bin destroyer-gui
+sudo target/release/destroyer-gui
+```
+（需要 `sudo` 的原因与 CLI 相同 —— 写入原始块设备需要 root 权限。）
+
+**What it does:**
+- 从 `/sys/class/block` 列出全盘块设备（包括大小、型号、是机械硬盘还是 SSD，以及根据 `/proc/mounts` 该路径下当前是否挂载了某些内容），或者允许你手动输入路径。
+- 允许你设置擦除次数 / 模式（`fast`/`durable`/`direct`）/ 缓冲区大小，与 CLI 相同。
+- 在写入任何内容之前，强制要求你**重新输入确切的设备路径**并勾选“我理解这是不可逆的”复选框 —— 没有你可以不小心点过去的倒计时。
+- 在后台线程中运行擦除任务，以保持窗口响应，并提供实时的单次擦除及总进度的进度条和预估剩余时间（ETA）。
+- 带有 **Cancel**（取消）按钮：它会设置一个标志，写入循环会在缓冲区大小的块（chunks）之间检查该标志（因此它会在大约一个缓冲区的 I/O 范围内停止，虽然不是瞬间停止，但在典型缓冲区大小下绝对会控制在 1 秒以内）。
+
+目前仅对接了 Linux 系统（在其他操作系统上 `src/bin/destroyer_gui.rs` 会打印清晰的提示消息并退出） —— macOS 的设备枚举和 macOS 版本的 GUI 构建将在后续支持。
+
+
 ## 架构
 - 核心逻辑（参数解析、设备辅助、写入流程）集中在 `destroyer` 库模块中（`src/args.rs`、`src/dev.rs`、`src/wipe.rs`、`src/app.rs`）。
 - 平台特定的运行器位于 `src/platform/`：Linux 使用 `platform::linux::run`，macOS 使用 `platform::macos::run`，Windows 使用 `platform::windows::run`，可在其中添加各自的调试逻辑或额外保护，然后调用共享的 `app::run`。

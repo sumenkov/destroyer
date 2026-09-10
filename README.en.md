@@ -174,6 +174,39 @@ Alternative: Disk Management → select disk → Offline.
 - **Permission denied:** run with `sudo` or as Administrator on Windows.
 - **Windows `Access denied` / `Sharing violation`:** disk is not offline or insufficient rights.
 
+## GUI (Linux only, for now)
+For people who prefer clicking to typing flags, there's a desktop GUI built
+with [egui/eframe](https://github.com/emilk/egui) (pure Rust, no GTK
+dependency — just the usual X11/Wayland dev headers most Linux desktops
+already have).
+
+**Build & run:**
+```bash
+cargo build --release --features gui --bin destroyer-gui
+sudo target/release/destroyer-gui
+```
+(`sudo` is needed for the same reason as the CLI — writing to a raw block
+device requires root.)
+
+**What it does:**
+- Lists whole-disk block devices from `/sys/class/block` (size, model,
+  rotational/SSD, and whether something under that path is currently
+  mounted, per `/proc/mounts`), or lets you type a path manually.
+- Lets you set passes / mode (`fast`/`durable`/`direct`) / buffer size, same
+  as the CLI.
+- Before writing anything, forces you to **retype the exact device path**
+  and check an "I understand this is irreversible" box — no timed
+  countdown you can accidentally click through.
+- Runs the wipe on a background thread so the window stays responsive, with
+  live per-pass and total progress bars and ETAs.
+- Has a **Cancel** button: it sets a flag that the write loop checks between
+  buffer-sized chunks (so it stops within roughly one buffer's worth of I/O,
+  not instantly, but well within a second for typical buffer sizes).
+
+Only Linux is wired up right now (`src/bin/destroyer_gui.rs` prints a clear
+message and exits on other OSes) — macOS device enumeration and a macOS
+build of the GUI would be a follow-up.
+
 ## Architecture
 - Core logic (argument parsing, device helpers, wiping routines) lives in the `destroyer` library crate (`src/args.rs`, `src/dev.rs`, `src/wipe.rs`, `src/app.rs`).
 - Platform-specific runners reside in `src/platform/`. For Linux the entry point is `platform::linux::run`, for macOS — `platform::macos::run`, for Windows — `platform::windows::run`; each can host OS-only setup, debugging flags, or extra safeguards before calling the shared `app::run`.
