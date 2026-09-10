@@ -68,14 +68,20 @@ impl Config {
                             }
                         }
                         "direct" => {
-                            #[cfg(all(feature = "direct", target_os = "linux"))]
+                            #[cfg(all(
+                                feature = "direct",
+                                any(target_os = "linux", target_os = "windows")
+                            ))]
                             {
                                 SyncMode::Direct
                             }
-                            #[cfg(not(all(feature = "direct", target_os = "linux")))]
+                            #[cfg(not(all(
+                                feature = "direct",
+                                any(target_os = "linux", target_os = "windows")
+                            )))]
                             {
                                 eprintln!(
-                                    "Режим 'direct' поддерживается только на Linux и при включённом флаге сборки."
+                                    "Режим 'direct' поддерживается только на Linux/Windows и при включённом флаге сборки."
                                 );
                                 exit(1);
                             }
@@ -165,11 +171,12 @@ impl Config {
   sudo {prog} /dev/sdX 8 --mode durable --buf 65536
   sudo {prog} /dev/sdX 8 --mode direct
   sudo {prog} /dev/diskN 3 --mode fast
+  {prog} \\\\.\\PhysicalDrive2 3 --mode direct
 
 Пояснения:
-  <устройство>     Путь к блочному девайсу (Linux: /dev/sdX|nvme0n1; macOS: /dev/diskN)
+  <устройство>     Путь к блочному девайсу (Linux: /dev/sdX|nvme0n1; macOS: /dev/diskN; Windows: \\\\.\\PhysicalDriveN)
   [проходы]        Количество проходов (последний — нулями). По умолчанию 8
-  --mode           fast (быстро) | durable (максимум надёжности) | direct (Linux, O_DIRECT — без page cache)
+  --mode           fast (быстро) | durable (максимум надёжности) | direct (Linux O_DIRECT / Windows NO_BUFFERING — без page cache)
   --buf BYTES      Размер буфера. Если не указан — выбирается автоматически
                    по размеру блока устройства (кратно сектору, целимся ~64 KiB)
   --quiet          Не выводить строку прогресса (ускоряет работу)."
