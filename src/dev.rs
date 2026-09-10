@@ -258,22 +258,26 @@ pub fn open_device_writable(dev_path: &str, mode: SyncMode) -> io::Result<File> 
                 flags |= win::FILE_FLAG_NO_BUFFERING;
             }
         }
-        // Попробуем эксклюзивный доступ: если диск занят, вернём ошибку.
-        let _probe = win::open_device_file(
+        // Попробуем эксклюзивный доступ
+        let mut f = match win::open_device_file(
             dev_path,
             win::GENERIC_READ | win::GENERIC_WRITE,
             0,
-            win::FILE_ATTRIBUTE_NORMAL,
-        )?;
-        let share_mode: u32 = win::FILE_SHARE_READ | win::FILE_SHARE_WRITE;
-        let mut f: File = win::open_device_file(
-            dev_path,
-            win::GENERIC_READ | win::GENERIC_WRITE,
-            share_mode,
             flags,
-        )?;
-        f.seek(SeekFrom::Start(0))?;
-        Ok(f)
+        ) {
+            Ok(file) => file,
+            Err(e) => {
+                // Если эксклюзивный доступ не удался, пробуем с общим доступом
+                eprintln!("\nЭксклюзивный доступ не удался: {e}, пробуем с общим доступом ...");
+                let share_mode: u32 = win::FILE_SHARE_READ | win::FILE_SHARE_WRITE;
+                win::open_device_file(
+                    dev_path,
+                    win::GENERIC_READ | win::GENERIC_WRITE,
+                    share_mode,
+                    flags,
+                )?
+            }
+        };
     }
 
     #[cfg(target_os = "macos")]

@@ -119,7 +119,7 @@ fn execute(cfg: Config, platform: Platform) {
             &mut buffers,
             tail_ref,
         ) {
-            eprintln!("Ошибка записи случайных данных: {e}");
+            eprintln!("\nОшибка записи случайных данных: {e}");
             std::process::exit(1);
         }
     }
